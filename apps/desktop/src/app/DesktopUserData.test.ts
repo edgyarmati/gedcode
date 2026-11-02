@@ -43,32 +43,29 @@ it.effect.each(["t3code", "t3code-v2", "T3 Code (Alpha)"])(
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "gedcode-profile-" });
       const source = path.join(directory, sourceName);
       const destination = path.join(directory, "gedcode");
-      yield* fs.makeDirectory(source, { recursive: true });
-      yield* fs.writeFileString(path.join(source, "Local State"), "T3 Code keys");
-      const resolved = yield* resolveUserDataPath({
+      const state = '{"os_crypt":{"encrypted_key":"test-encrypted-key"}}';
+      yield* fs.makeDirectory(path.join(directory, "T3 Code (Alpha)"), { recursive: true });
+      yield* fs.makeDirectory(path.join(source, "IndexedDB"), { recursive: true });
+      yield* fs.writeFileString(path.join(source, "Local State"), state);
+      yield* fs.writeFileString(path.join(source, "IndexedDB", "LOCK"), "V1 owns this database");
+      yield* resolveUserDataPath({
         appDataDirectory: directory,
         isDevelopment: false,
         platform: "win32",
       });
-      assert.equal(resolved, destination);
       assert.isFalse(yield* fs.exists(path.join(destination, "Local State")));
+      assert.equal(yield* fs.readFileString(path.join(source, "Local State")), state);
+      assert.isFalse(yield* fs.exists(path.join(destination, "IndexedDB")));
+      yield* fs.makeDirectory(destination, { recursive: true });
+      yield* fs.writeFileString(path.join(destination, "Local State"), "existing GedCode state");
+      yield* resolveUserDataPath({
+        appDataDirectory: directory,
+        isDevelopment: false,
+        platform: "win32",
+      });
+      assert.equal(
+        yield* fs.readFileString(path.join(destination, "Local State")),
+        "existing GedCode state",
+      );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-);
-
-it.effect("leaves an existing GedCode profile untouched", () =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "gedcode-profile-" });
-    const destination = path.join(directory, "gedcode");
-    yield* fs.makeDirectory(destination, { recursive: true });
-    yield* fs.writeFileString(path.join(destination, "Local State"), "existing state");
-    const resolved = yield* resolveUserDataPath({
-      appDataDirectory: directory,
-      isDevelopment: false,
-      platform: "win32",
-    });
-    assert.equal(resolved, destination);
-    assert.equal(yield* fs.readFileString(path.join(destination, "Local State")), "existing state");
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

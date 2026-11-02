@@ -38,7 +38,7 @@ const NOTICE: Electron.MessageBoxOptions = {
   buttons: ["OK"],
   message: "GedCode 0.5 replaces the Ged orchestrator",
   detail: [
-    "The old Ged orchestrator — PM sessions and task stages — is deprecated and is not part of this version in that form. Planning, implementation and verification now run through the new orchestrator.",
+    "The old Ged orchestrator (PM sessions and task stages) is deprecated and is not part of this version in that form. Planning, implementation and verification now run through the new orchestrator.",
     "Your projects and threads carry over as regular threads.",
     "PM history (PM sessions, tasks, stage history and gates) does not carry over. It is not deleted: it stays in the old database, and reinstalling GedCode 0.4.8 shows it again.",
   ].join("\n\n"),

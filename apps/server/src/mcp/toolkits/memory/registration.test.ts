@@ -16,7 +16,6 @@ import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresen
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { McpSchema, McpServer, Tool } from "effect/ai";
 
@@ -101,8 +100,7 @@ const serverLayer = (root: string) => {
     ),
     Layer.provide(
       Layer.mock(Project.ProjectService)({
-        getById: () =>
-          Effect.succeed(Option.some({ id: projectId, workspaceRoot: root } as ProjectRecord)),
+        getById: () => Effect.succeedSome({ id: projectId, workspaceRoot: root } as ProjectRecord),
       }),
     ),
     Layer.provide(ServerConfig.layerTest(root, { prefix: "ged-registration" })),

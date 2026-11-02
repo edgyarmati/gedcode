@@ -15,7 +15,7 @@ import {
 /** The parts of upstream's electron-builder config the identity overlay touches. */
 const upstreamBuildConfig = {
   appId: "com.t3tools.t3code",
-  productName: "T3 Code (Alpha)",
+  productName: "T3 Code (Beta)",
   artifactName: "T3-Code-${version}-${arch}.${ext}",
   mac: {
     protocols: [{ name: "T3 Code", schemes: ["t3code"] }],
@@ -25,13 +25,14 @@ const upstreamBuildConfig = {
     executableName: "t3code",
     protocols: [{ name: "T3 Code", schemes: ["t3code"] }],
   },
-  dmg: { title: "T3 Code (Alpha) 1.0.0 Installer" },
+  dmg: { title: "T3 Code (Beta) 1.0.0 Installer" },
   files: ["!**/*.map"],
 };
 
 describe("GedCode identity", () => {
   it("rewrites the most specific product name first", () => {
     assert.equal(rebrandText("Restart T3 Code (Alpha) now"), "Restart GedCode now");
+    assert.equal(rebrandText("Restart T3 Code (Beta) now"), "Restart GedCode now");
     assert.equal(rebrandText("T3 Code (Nightly)"), "GedCode (Nightly)");
     assert.equal(rebrandText("Sign in to T3 Connect"), "Sign in to GedCode Connect");
     assert.equal(rebrandText("the T3 Code desktop app"), "the GedCode desktop app");
@@ -165,7 +166,7 @@ describe("GedCode identity", () => {
       yield* fs.makeDirectory(path.join(root, "client/assets"), { recursive: true });
       yield* fs.makeDirectory(path.join(root, "node_modules/dep"), { recursive: true });
       yield* fs.writeFileString(path.join(root, "client/index.html"), "<title>T3 Code</title>");
-      yield* fs.writeFileString(path.join(root, "client/assets/app.js"), 'n="T3 Code (Alpha)"');
+      yield* fs.writeFileString(path.join(root, "client/assets/app.js"), 'n="T3 Code (Beta)"');
       yield* fs.writeFileString(path.join(root, "client/assets/plain.js"), "no product name");
       yield* fs.writeFileString(path.join(root, "client/assets/logo.png"), "T3 Code");
       yield* fs.writeFileString(path.join(root, "node_modules/dep/index.js"), "T3 Code");

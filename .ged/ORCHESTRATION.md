@@ -3,9 +3,9 @@
 > How the Ged plan / implement / verify discipline is expressed on top of T3 Code's
 > V2 orchestrator. Supersedes the v0.4 durable stage pipeline.
 
-- Status: accepted, unimplemented
+- Status: implemented
 - Date: 2026-10-11
-- Base: T3 Code `main` @ `9afde1c6d` (#17848)
+- Base: T3 Code `main` @ `30084f0018c5751a07291222e8d04e16d513700a` (2026-11-02)
 
 ## 1. What changed
 
@@ -26,43 +26,22 @@ guarantee to the land boundary.
 What the V2 orchestrator provides, and what each fact implies for us. These are
 load-bearing; re-verify after any large upstream merge.
 
-| Mechanism            | Fact                                                                                                                                                                                                                                                                                                                                                                         | Implication                                                                                                         |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Child context        | A delegated child receives only the task prompt plus the role prefix. Parent conversation history is **not** copied.                                                                                                                                                                                                                                                         | A verifier is structurally blind to the implementer's reasoning. Isolation is free.                                 |
-| Review rounds        | Each round is a new `delegate_task`. `childThreadId` is backing storage, not a `t3_thread_send` target. There is no task-level follow-up API preserving a reviewer session.                                                                                                                                                                                                  | Upstream deliberately prevents arguing a reviewer into agreement across rounds. Anti-sycophancy by construction.    |
-| Privilege ceiling    | `DispatchModeLimit` caps the broadest modes an MCP-sent command may touch, re-checked inside the thread's command lock so the target's user cannot raise them mid-flight. Runtime rank: `approval-required`(0) < `auto-accept-edits`(1) < `auto`(2) < `full-access`(3); interaction rank: `plan`(0) < `default`(1). Escalation is denied (`runtime_mode_escalation_denied`). | Children inherit the lead's mode; a narrower one stalls unattended children on every command.                       |
-| Target selection     | `target: { providerInstanceId?, driverKind?, model? }` per call.                                                                                                                                                                                                                                                                                                             | Per-role model and cross-vendor routing, with no code of ours.                                                      |
-| Plan mode            | `interactionMode: "plan"` is server-enforced; proposed plans are first-class in `t3_thread_read`'s `messages` view.                                                                                                                                                                                                                                                          | Native plan artifact and native approval UI.                                                                        |
-| Worktree inheritance | `makeSubagentChildThread` spreads `...parentThread`, overriding only id/title/lineage/provider/model.                                                                                                                                                                                                                                                                        | **All delegated children share the parent's checkout.** Isolation requires `t3_thread_launch`.                      |
-| Workspace binding    | `t3_thread_launch` takes `workspaceStrategy: worktree \| existing_worktree \| root`, bound before the agent starts. Creating a worktree in the prompt does not rebind.                                                                                                                                                                                                       | The only way to get a private checkout — but it yields an _ordinary_ thread: no subagent lineage, no `task_status`. |
-| Nesting              | `task_cancel` stops every task the child delegated; `hasPendingChildRuns` tracks nested work.                                                                                                                                                                                                                                                                                | An ordinary thread can itself delegate. Multi-level topology is supported.                                          |
-| `role` param         | Implemented in `OrchestratorMcpService.ts:646` as a prompt prefix: `Act as the ${role} sub-agent for this task.`                                                                                                                                                                                                                                                             | **Vestigial.** Real role definition must come from the brief. Do not hang discipline on it.                         |
+| Mechanism          | Constraint for Ged                                                                                                                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Child context      | Delegated children receive the supplied task and role prefix without the parent conversation. Pass original criteria to each reviewer; omit implementer summaries.                                   |
+| Review rounds      | Each round is a new `delegate_task` with a distinct retry-stable `clientRequestId`. `childThreadId` is backing storage, never the target for another review round.                                   |
+| Privilege ceiling  | Children inherit runtime and interaction modes; broader modes are denied. Verifiers inherit access and are instructed to report, not fix.                                                            |
+| Workspaces         | Delegation defaults to the parent checkout. `isolation:"worktree"` prepares a separate checkout from the parent commit and excludes uncommitted changes. Do not create a checkout in a child prompt. |
+| Other environments | Peer-linked targets accept environment/project IDs and enforce remote permissions. Local worktree isolation is not supported for remote delegation.                                                  |
+| Completion         | Follow a running delegate's returned `next`; completion wakes its parent. A wait timeout does not cancel it. Cancel replaced or unwanted tasks with `task_cancel`.                                   |
+| Instructions       | Codex receives numbered sections, each below 4,000 UTF-8 bytes. Ged's complete memory/review policy must be its own section, as well as reaching other provider channels.                            |
 
 ## 3. Topology
 
-Three levels. The middle one exists to resolve the tension between worktree
-isolation and the durable task lifecycle — we want both, and they live at
-different levels.
-
-```
-PM thread                 project root checkout, no code edits
-  │                       talks to the human, owns the backlog
-  │  t3_thread_launch(workspaceStrategy: "worktree", baseRef)
-  ▼
-Task lead                 private checkout, one per unit of work
-  │                       ordinary thread, so it has its own run + MCP credential
-  │  delegate_task(...)
-  ▼
-Role children             share the lead's checkout
-                          durable task records: task_status / wait / cancel
-```
-
-- **Leads run concurrently** without stepping on each other, because each owns a
-  worktree.
-- **Children are cheap and durable** within a lead, because they are real delegated
-  tasks with result context transfers and parent projection UI.
-- **Approval gates** sit at PM level (which work starts) and at land (what merges).
-  Nothing in between is gated.
+A lead owns a unit of work and chooses shared or isolated delegated work. Shared children need
+explicit, disjoint file ownership. An isolated child has the task lifecycle and a private checkout;
+its changes still need integration and independent review before landing. Use a separate top-level
+thread only when the user asks for one, selecting `workspaceStrategy` in `t3_thread_launch`.
 
 ## 4. Stage discipline
 
@@ -129,8 +108,8 @@ pattern and the one we want regardless.
 ### Breadth
 
 Run dimensions in parallel — correctness, tests, security — as separate
-`mode: "async"` delegations, then poll `task_status`. Nothing in the orchestrator
-bounds fan-out or nesting depth, so the lead's own playbook must; see §8.
+`mode: "async"` delegations, following returned `next` until completion wakes the parent.
+Do not poll running delegates. The lead's own playbook bounds fan-out and nesting; see §8.
 
 ## 6. Model policy
 
@@ -189,12 +168,10 @@ recorded in [DECISIONS.md](./DECISIONS.md).
 
 ## 8. Failure modes to watch
 
-- **Lead worktree drift.** The lead binds a worktree at launch; children inherit it.
-  If a child creates another worktree in-prompt, the binding does not follow, and
-  subsequent children will not see that work.
+- **Worktree drift.** Shared children inherit the parent checkout; isolated children use the
+  checkout prepared by delegation. Shell-created checkouts do not rebind either thread.
 - **Wait blocking.** `mode: "wait"` blocks the lead's turn. A wait timeout does not
-  cancel the child — it sets `waitTimedOut: true` and the lead must continue via
-  `task_status`.
+  cancel the child — it sets `waitTimedOut: true`. Follow the returned `next` and completion wake.
 - **Verdict staleness.** A verdict keyed to a SHA is invalidated by any amend or
   rebase. The gate compares against the _current_ head rather than merely finding a record.
 - **Slug drift.** `ProjectMemory.verdictSlug` and the slug rule in `land-gate.sh` must map a

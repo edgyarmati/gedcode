@@ -4,6 +4,7 @@ import { REVIEW_POLICY_SCRIPT } from "../reviewPolicyScript.ts";
 export const REVIEW_POLICY_GATE_MARKER = "# Ged review policy: v1";
 
 /** Exact stock gate eligible for explicit upgrade; custom gates are never overwritten. */
+// oxlint-disable-next-line t3code/no-em-dash-copy -- This migration fingerprint must preserve the exact historical script bytes.
 export const LEGACY_LAND_GATE = `#!/usr/bin/env sh
 # Ged land gate: refuse to land a change without a current, passing, independent verdict.
 # Usage: .ged/bin/land-gate.sh [ref]     (default: HEAD)
@@ -178,7 +179,7 @@ export const LAND_GATE = OPT_OUT_LAND_GATE.replace(
   `  const availability = verifiers.some((r) => r.otherVendorAvailable)
     ? "another vendor was installed; installation does not establish usable authentication, subscription or quota"
     : "no other vendor was installed";
-  console.error(\`WARNING: same-provider review — verified only by the implementer vendor (\${iv}); \${availability}. Cross-vendor review is preferred.\`);
+  console.error(\`WARNING: same-provider review: verified only by the implementer vendor (\${iv}); \${availability}. Cross-vendor review is preferred.\`);
   for (const r of verifiers) {
     if (r.selectionReason) console.error(\`WARNING: reviewer selection (\${r.who}): \${r.selectionReason}\`);
   }`,

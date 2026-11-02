@@ -1,12 +1,6 @@
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
 
-/**
- * Sparkle's trust anchor. The matching EdDSA private seed lives in the macOS
- * Keychain item `Private key for signing Sparkle updates` (account
- * `gedcode-updates`) and in the `SPARKLE_ED_PRIVATE_KEY` repository secret.
- * Sparkle reads this value from the packaged `Info.plist`, so changing it
- * strands every existing install behind a manual bridge release.
- */
+/** Stable EdDSA trust anchor embedded in Info.plist; rotating it strands installed apps. */
 export const SPARKLE_ED_PUBLIC_KEY = "OEqTyWgHzGWLdI/c38qOQw+fwKdK+npBmpSEum8e4U4=";
 
 /** The GitHub release that hosts the appcasts, kept separate from the release

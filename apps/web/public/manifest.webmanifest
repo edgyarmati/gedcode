@@ -1,5 +1,7 @@
 {
   "id": "/",
+  "name": "GedCode",
+  "short_name": "GedCode",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

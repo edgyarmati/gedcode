@@ -5,34 +5,18 @@ import { sparkleBuilderConfig } from "electron-sparkle-updater/builder";
 
 import type { BuildPlatform } from "../lib/build-target-arch.ts";
 
-/**
- * electron-builder configuration for the Sparkle-enabled macOS artifact.
- *
- * `sparkleBuilderConfig` returns a configuration fragment rather than a whole
- * config: `Sparkle.framework` as an extra file, the Info.plist keys Sparkle
- * reads at launch, and the `writeUpdateInfo: false` that stops
- * electron-builder writing electron-updater metadata for the DMG. Merging it into the macOS build config
- * is this module's job; the build
- * script applies it to whatever `createBuildConfig` produced, so that function
- * and its tests stay exactly upstream's.
- */
-
-/** The hook electron-builder runs after staging the app, re-signing it ad hoc
-    so the code resource seal still covers the framework Sparkle needs.
+/** Prepares upstream's server compile cache, then re-signs the app ad hoc
+    so the code resource seal covers the cache and the framework Sparkle needs.
     Absolute, because electron-builder resolves hooks from its working
     directory rather than the staged project, as with `sign-macos.ts`. */
 export const SPARKLE_AFTER_PACK_SCRIPT = NodeURL.fileURLToPath(
   new URL("./afterPack.cjs", import.meta.url),
 );
 
-/**
- * Info.plist policy the package's fragment leaves at Sparkle's defaults.
- * DesktopUpdates owns scheduling, consent and install timing, so Sparkle's own
- * scheduler, its first-launch permission prompt and silent installs stay off.
- * Feeds must be signed and archives verified before extraction; installs that
- * already require a signed feed reject an unsigned one, so dropping these
- * would strand them. `generate_appcast` only signs the feed when the app asks.
- */
+/** DesktopUpdates owns scheduling, consent and install timing, so Sparkle's
+    scheduler and silent installs stay off. Existing installs require signed
+    feeds and verification before extraction; dropping these would strand them.
+    `generate_appcast` only signs the feed when the app asks. */
 const SPARKLE_UPDATE_POLICY = {
   SUEnableAutomaticChecks: false,
   SUAllowsAutomaticUpdates: false,
@@ -74,13 +58,9 @@ export function applySparkleBuildConfig(
     localizations: [...options.localizations],
   });
 
-  // Two parts of the fragment are deliberately not merged:
-  // - `asarUnpack`: on macOS this build relies on electron-builder's smart
-  //   unpack, which already extracts any package carrying a `.node` file, as
-  //   it does for the other native addons.
-  // - `zip`: electron-builder 26 has no top-level `zip` options and rejects
-  //   the whole config over it. The zip's `latest-mac.yml` is still written,
-  //   and is harmless: the Ged release workflow publishes assets by name.
+  // Smart unpack handles `.node` files, so omit the fragment's `asarUnpack`.
+  // electron-builder 26 rejects its top-level `zip` key; the resulting
+  // latest-mac.yml is harmless because Ged publishes release assets by name.
   return {
     ...buildConfig,
     afterPack: SPARKLE_AFTER_PACK_SCRIPT,

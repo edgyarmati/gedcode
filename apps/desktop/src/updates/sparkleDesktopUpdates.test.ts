@@ -1,5 +1,4 @@
 import { assert, describe, it } from "@effect/vitest";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { sparkleAppcastUrl } from "@t3tools/shared/sparkleUpdate";
@@ -125,6 +124,51 @@ describe("DesktopUpdates on Sparkle", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect(
+    "keeps a completed background download held until requested, then installs it by version",
+    () => {
+      const { sparkle, harness } = makeSparkleHarness();
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          yield* updates.check("test");
+          sparkle.emit({ type: "update-available", version: "1.2.4" });
+          sparkle.emit({ type: "update-downloaded", version: "1.2.4" });
+          yield* flushCallbacks;
+
+          assert.equal((yield* updates.getState).status, "available");
+          assert.isFalse((yield* updates.installPrepared("1.2.4")).accepted);
+          assert.equal(sparkle.bridge.installUpdateNow.mock.calls.length, 0);
+          assert.equal(sparkle.bridge.installUpdateOnQuit.mock.calls.length, 0);
+
+          yield* updates.check("poll");
+          yield* flushCallbacks;
+          assert.equal((yield* updates.getState).status, "available");
+          assert.notInclude(sparkle.calls, "checkForUpdates:deferred");
+
+          const download = yield* updates.download;
+          yield* flushCallbacks;
+          assert.isTrue(download.completed);
+          assert.equal((yield* updates.getState).downloadedVersion, "1.2.4");
+          assert.isFalse((yield* updates.installPrepared("1.2.5")).accepted);
+          assert.equal(sparkle.bridge.installUpdateNow.mock.calls.length, 0);
+
+          const install = yield* updates.installPrepared("1.2.4");
+          assert.isTrue(install.accepted);
+          assert.isFalse(install.failed);
+          assert.equal(sparkle.bridge.installUpdateNow.mock.calls.length, 1);
+          assert.equal(sparkle.bridge.installUpdateOnQuit.mock.calls.length, 0);
+          assert.deepEqual(
+            [...harness.installRecords.values()].map((record) => JSON.parse(record)),
+            [{ fromVersion: "1.2.3", targetVersion: "1.2.4" }],
+          );
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
+
   it.effect("surfaces a missing Sparkle addon as a failed check", () => {
     const harness = makeHarness({
       env: { T3CODE_DESKTOP_MOCK_UPDATES: "false" },
@@ -158,7 +202,6 @@ describe("DesktopUpdates on Sparkle", () => {
         yield* updates.check("test");
         yield* flushCallbacks;
         yield* updates.setChannel("nightly");
-        yield* TestClock.adjust(Duration.millis(15_000));
         yield* flushCallbacks;
 
         assert.deepEqual(sparkle.feedUrls, [

@@ -2,26 +2,19 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-/**
- * GedCode's identity, applied to the desktop build rather than threaded
- * through upstream's sources: the bundle identity, product names and URL
- * schemes in the electron-builder config, and the user-visible product name in
- * the staged bundles. Doing it at build time keeps the ~200 upstream files
- * that say "T3 Code" unmodified, so they keep merging cleanly.
- *
- * Runtime identity that must also hold in development (data directories, the
- * renderer's URL scheme, the window/app name) is set in the sources
- * themselves; see `.ged/STANDARDS.md`.
- */
+/** Rebrand staged bundles rather than editing upstream's user-visible strings.
+    Runtime identity (data directories, URL scheme, app name) must also hold in
+    development and is set in source; see `.ged/STANDARDS.md`. */
 
 export const GED_APP_ID = "com.gedcode.app";
 export const GED_PRODUCT_NAME = "GedCode";
 export const GED_URL_SCHEMES = ["gedcode", "gedcode-dev"] as const;
 export const GED_REPOSITORY_URL = "https://github.com/edgyarmati/gedcode";
 
-/** Upstream's product names, most specific first. "Alpha" is upstream's
-    stable stage; a stable GedCode is plain "GedCode", as v0.4 was. */
+/** Upstream's product names, most specific first. A stable GedCode is plain
+    "GedCode", regardless of upstream's stable stage label. */
 const PRODUCT_NAME_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
+  ["T3 Code (Beta)", GED_PRODUCT_NAME],
   ["T3 Code (Alpha)", GED_PRODUCT_NAME],
   ["T3 Code (Nightly)", `${GED_PRODUCT_NAME} (Nightly)`],
   ["T3 Code (Dev)", `${GED_PRODUCT_NAME} (Dev)`],
@@ -34,15 +27,9 @@ export const GED_CLI_NAME = "gedcode";
 
 const CLI_EXCLUDED_KEYWORDS = "in|of|instanceof|extends|as|from";
 
-/**
- * Upstream's other names in prose, applied in order after the product names.
- * Bundles are rewritten as text, so every rule is anchored where it cannot be
- * code: an identifier followed by a space and a word is a syntax error in
- * JavaScript unless the word is a keyword, which the CLI rule excludes, and
- * `T3`/`t3` are never matched as part of a longer name, a member, a path or a
- * CSS class. Remote-host paths, unit names and MCP tool names stay as they are:
- * they are protocol, not prose.
- */
+/** These ordered text rules must only match prose: exclude keywords after
+    identifiers, longer names, members, paths and CSS classes. Remote-host paths,
+    unit names and MCP tool names are protocol and must remain unchanged. */
 const PROSE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   // Upstream names one theme after its sister product.
   [/\bT3 Chat\b/g, "Orchid"],

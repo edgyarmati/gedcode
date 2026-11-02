@@ -679,3 +679,41 @@ enforcement unchanged.
 without the repository lockfile. The caret range can select a newer beta, leaving the beta.15
 patch unused and failing the release install. The manifest is a necessary upstream seam: pinning
 the already-tested version fixes the existing staging path without redesigning packaging.
+
+## 2026-11-02 — Integrate the current upstream feature set
+
+Integrate upstream `30084f0018c5751a07291222e8d04e16d513700a` into an isolated branch, keeping
+Ged's identity, Sparkle trust anchor, memory, review policy, disabled analytics and legacy-data
+upgrade. The user authorized conflict resolution and does not require upstream history preservation;
+a merge keeps both existing tips without replaying the old v0.4 history. Build this integration as 0.6.0 while retaining upstream manifest versions.
+
+Use upstream's current Node 26.12.1, pnpm 12.14.0 and `@tsc-rs/typescript` toolchain. Its Claude
+environment merge supersedes the Ged backport. Codex now truncates each instruction entry at 4,000
+UTF-8 bytes, so deliver Ged policy as a separate entry in upstream's section list, not only in the
+combined prompt. Ged's explicit review/lead fallback policy remains an exception to upstream's
+no-unrequested-provider-switch guidance.
+
+The new desktop pairing and prompt helpers require Ged's schemes in `shared/remote.ts` and
+`promptLinks.ts`. The root Vite test project list must exclude mobile as the workspace does;
+otherwise focused root tests load its uninstalled native toolchain. These additional upstream seams
+are necessary for supported Ged behavior. Sparkle must compose upstream's compile-cache after-pack
+hook before signing rather than replace it. Never rotate its public key during a sync.
+
+Delegated tasks can now request worktree isolation without becoming top-level threads. The isolated
+checkout starts from the parent commit and excludes uncommitted edits; shared tasks still need
+explicit file ownership. Follow completion wakes instead of polling. Peer-linked remote delegation
+is separate from pairing a desktop client, and enforces the destination's permission ceiling.
+
+Project-to-machine is an upstream clone plus selected ignored text files. It does not transport dirty
+work, unpublished commits, or thread history. Preserve that contract in the UI and user guide rather
+than describe it as a lossless project migration.
+
+Incoming upstream workflows include new deployment, mobile and issue-automation IDs. Existing
+repository disablement does not cover new IDs automatically: audit and disable inapplicable workflows
+before any future push. This integration does not authorize pushing or publishing releases.
+
+The original stock gate is an exact-byte migration fingerprint. Its historical em dashes cannot be
+rewritten to satisfy a new copy-style rule without breaking safe identification, so that literal
+carries a narrowly reasoned lint exception. New warning copy follows the current style; review and
+upgrade behavior are unchanged. macOS test fixtures canonicalize temporary paths when modeling
+Git or a CLI's real working directory; deliberate registry aliases remain lexical.

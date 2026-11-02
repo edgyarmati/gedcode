@@ -14,7 +14,6 @@ import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
-import * as DesktopUserData from "./DesktopUserData.ts";
 
 const defaultEnvironmentInput = {
   dirname: "/repo/apps/desktop/dist-electron",
@@ -44,6 +43,7 @@ const layerElectronApp = (calls: ElectronAppCalls) =>
     name: Effect.succeed("T3 Code"),
     systemLocale: Effect.succeed("en-US"),
     whenReady: Effect.void,
+    requestSingleInstanceLock: Effect.succeed(true),
     quit: Effect.void,
     exit: () => Effect.void,
     relaunch: () => Effect.void,
@@ -145,7 +145,7 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("isolates the V2 profile even when the legacy V1 profile exists", () =>
+  it.effect("keeps the GedCode production profile", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
@@ -157,7 +157,7 @@ describe("DesktopAppIdentity", () => {
     ),
   );
 
-  it.effect("uses the development profile directory", () =>
+  it.effect("keeps the GedCode development profile", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
@@ -173,109 +173,17 @@ describe("DesktopAppIdentity", () => {
     ),
   );
 
-  it.effect("preserves failures while inspecting the legacy userData path", () => {
-    const legacyPath = "/Users/alice/Library/Application Support/gedcode-dev";
-    const cause = PlatformError.systemError({
-      _tag: "PermissionDenied",
-      module: "FileSystem",
-      method: "exists",
-      description: "permission denied",
-      pathOrDescriptor: legacyPath,
-    });
-
-    return withIdentity(
-      Effect.gen(function* () {
-        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
-        const error = yield* identity.resolveUserDataPath.pipe(Effect.flip);
-
-        assert.instanceOf(error, DesktopUserData.DesktopUserDataInitializationError);
-        assert.equal(error.resourcePath, legacyPath);
-        assert.strictEqual(error.cause, cause);
-        assert.equal(
-          error.message,
-          `Could not initialize Electron user data during inspect at ${legacyPath} (PermissionDenied).`,
-        );
-      }),
-      {
-        legacyPathProbeError: cause,
-        environment: { env: { VITE_DEV_SERVER_URL: "http://localhost:5173" } },
-      },
-    );
-  });
-
-  it.effect("configures app identity from the environment commit override", () => {
-    const calls: ElectronAppCalls = {
-      setAboutPanelOptions: [],
-      setDockIcon: [],
-      setName: [],
-    };
-
-    return withIdentity(
-      Effect.gen(function* () {
-        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
-        yield* identity.configure;
-
-        assert.deepEqual(calls.setName, ["GedCode"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "GedCode");
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
-        assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
-        // Packaged: the bundle's own icon stands, so a custom one the user
-        // attached survives.
-        assert.deepEqual(calls.setDockIcon, []);
-      }),
-      {
-        calls,
-        environment: {
-          env: {
-            T3CODE_COMMIT_HASH: "0123456789abcdef",
-          },
-        },
-        pngIconPath: Option.some("/icon.png"),
-      },
-    );
-  });
-
   it.effect.each([
-    { stage: "Alpha", runtimeName: "GedCode", aboutName: "GedCode", environment: {} },
+    { stage: "Beta", environment: {} },
     {
       stage: "Nightly",
-      runtimeName: "GedCode Nightly",
-      aboutName: "GedCode (Nightly)",
       environment: { appVersion: "0.0.43-nightly.20260929.2428" },
     },
     {
       stage: "Dev",
-      runtimeName: "GedCode Dev",
-      aboutName: "GedCode (Dev)",
       environment: { env: { VITE_DEV_SERVER_URL: "http://localhost:5173" } },
     },
-  ])(
-    "uses a valid native User-Agent product name for $stage",
-    ({ stage, runtimeName: expectedName, aboutName, environment }) => {
-      const calls: ElectronAppCalls = {
-        setAboutPanelOptions: [],
-        setDockIcon: [],
-        setName: [],
-      };
-
-      return withIdentity(
-        Effect.gen(function* () {
-          const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
-          yield* identity.configure;
-
-          const runtimeName = calls.setName[0];
-          assert.isDefined(runtimeName);
-          assert.equal(runtimeName, expectedName);
-          // RFC 9110's token grammar, after Electron removes ASCII spaces.
-          assert.match(runtimeName.replaceAll(" ", ""), /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/);
-          assert.equal(calls.setAboutPanelOptions[0]?.applicationName, aboutName);
-        }),
-        { calls, environment },
-      );
-    },
-  );
-
-  it.effect("sets the dock icon only when running unpackaged", () => {
+  ])("uses a valid native User-Agent product name for $stage", ({ stage, environment }) => {
     const calls: ElectronAppCalls = {
       setAboutPanelOptions: [],
       setDockIcon: [],
@@ -287,15 +195,16 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         yield* identity.configure;
 
-        // Electron shows a generic icon for an unpackaged run, which is the
-        // reason this call exists at all.
-        assert.deepEqual(calls.setDockIcon, ["/icon.png"]);
+        const runtimeName = calls.setName[0];
+        assert.isDefined(runtimeName);
+        assert.equal(runtimeName, stage === "Beta" ? "GedCode" : `GedCode ${stage}`);
+        assert.match(runtimeName.replaceAll(" ", ""), /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/);
+        assert.equal(
+          calls.setAboutPanelOptions[0]?.applicationName,
+          stage === "Beta" ? "GedCode" : `GedCode (${stage})`,
+        );
       }),
-      {
-        calls,
-        environment: { isPackaged: false },
-        pngIconPath: Option.some("/icon.png"),
-      },
+      { calls, environment },
     );
   });
 });

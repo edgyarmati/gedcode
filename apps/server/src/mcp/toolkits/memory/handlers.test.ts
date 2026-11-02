@@ -13,7 +13,6 @@ import * as NodeChildProcess from "node:child_process";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
@@ -103,8 +102,7 @@ const dependencies = (
       getProjectThreadRecords: () => Effect.succeed({ thread: caller, runs: [] } as never),
     }),
     Layer.mock(Project.ProjectService)({
-      getById: () =>
-        Effect.succeed(Option.some({ id: projectId, workspaceRoot: root } as ProjectRecord)),
+      getById: () => Effect.succeedSome({ id: projectId, workspaceRoot: root } as ProjectRecord),
     }),
     Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({
       capabilities: () =>

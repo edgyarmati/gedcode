@@ -78,11 +78,8 @@ const isContinuable = (existing: unknown, ruling: VerdictRuling): existing is Ve
 };
 
 /**
- * Adds a ruling to the branch's record. A ruling on the same commit and
- * implementer joins the existing reviews, replacing only an earlier ruling by
- * the same verifier task; anything else (a new commit, a malformed or older record)
- * starts the record over, because rulings on another commit say nothing about
- * this one.
+ * Preserve reviews only for the same commit and implementer, replacing the same verifier task.
+ * New commits and malformed records start over because their rulings do not cover this change.
  */
 export const mergeRuling = (existing: unknown, ruling: VerdictRuling): VerdictRecord => {
   const kept = isContinuable(existing, ruling)

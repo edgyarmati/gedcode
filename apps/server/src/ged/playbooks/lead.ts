@@ -37,7 +37,7 @@ well-specified slices and for reading or summarising. Pick reasoning effort the 
 
 The user's stated preferences come first. \`.ged/model-notes.md\` records them. Try a preferred
 model before your own choice. If it is not available, use the best one you can, and **say so in the
-thread** — never switch silently. When the user states a new preference ("use X for Y"), add it to
+thread**; never switch silently. When the user states a new preference ("use X for Y"), add it to
 \`.ged/model-notes.md\` in one line.
 
 Verification prefers another vendor when usable; see below.
@@ -112,13 +112,19 @@ implementer round with its findings, then fresh verifiers. After three failed ro
 ## Budget
 
 The orchestrator imposes no depth limit and no fan-out cap; that is on you. Leads do not spawn
-leads. At most three parallel verifiers in a round. Children share your worktree; creating a
-worktree inside a child's prompt does not rebind anything. \`mode: "wait"\` timing out does not
-cancel the child; continue with \`task_status\`.
+leads. At most three parallel verifiers in a round. \`delegate_task\` defaults to
+\`isolation: "shared"\`, using your checkout. Request \`isolation: "worktree"\` for a separate
+checkout at your current commit; uncommitted edits are not copied. Never create a child's checkout
+in the shell or its prompt. Follow a running task's returned \`next\`: end your turn for its
+completion wake, then read its result with \`task_status\`. Do not poll, sleep or start watchers.
+A \`mode: "wait"\` timeout does not cancel the child. Every review round uses a new
+\`delegate_task\` with the original brief, findings and unresolved objections, never
+\`t3_thread_send\` on its backing \`childThreadId\`.
 
 ## Recording
 
-- Plans go in \`.ged/plans/<slug>/\` (the planner brief says how).
+- Follow project policy for plans; keep temporary plans outside the worktree and never commit them.
+  Preserve existing durable Ged memory.
 - Verifiers call \`ged_verdict_write\`; check \`ged_land_check\` before proposing a merge. Any amend or
   rebase after verification invalidates the verdict; re-verify rather than editing the SHA.
 - When the work lands, add a short dated entry to \`.ged/PROGRESS.md\` saying what changed and why.

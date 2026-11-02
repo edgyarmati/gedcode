@@ -25,16 +25,9 @@ export interface StageSparkleOptions<E, R> {
   readonly run: (command: ChildProcess.Command, label: string) => Effect.Effect<void, E, R>;
 }
 
-/**
- * Prepares the staged app for a Sparkle-enabled macOS package.
- *
- * The staged install skips `electron-sparkle-updater`'s build scripts like
- * every other native dependency, so this extracts the vendored
- * `Sparkle.framework` and compiles the bridge addon against the Electron
- * version being packaged — the two paths the builder config points at. A
- * failure here fails the build: a package without the framework would load,
- * then fail on its first update check.
- */
+/** The staged install skips native build scripts, so extract Sparkle.framework
+    and compile the bridge against the packaged Electron version. Fail the build
+    if either is missing; otherwise the first update check would fail. */
 export const stageSparkle = Effect.fn("stageSparkle")(function* <E, R>(
   options: StageSparkleOptions<E, R>,
 ) {

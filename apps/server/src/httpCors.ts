@@ -9,3 +9,5 @@ export const browserApiCorsAllowedHeaders = [
   "dpop",
   ORCHESTRATION_PROTOCOL_HEADER,
 ] as const;
+
+export const DESKTOP_RENDERER_ORIGINS = ["gedcode://app", "gedcode-dev://app"] as const;

@@ -5,6 +5,7 @@ import { useFilesystemReadAccess } from "../../state/filesystem";
 import { useEnvironmentQuery } from "../../state/query";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { requestGedSetup } from "./GedSetupDialog";
+import { WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 
 /**
  * Shows beside the project name whether the project uses Ged, and opens setup
@@ -28,31 +29,33 @@ export function GedStatusPill({
   const setUp = status.data.present.length > 0;
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            onClick={() => requestGedSetup({ environmentId, cwd, projectName })}
-            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-muted-foreground text-xs transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          />
-        }
-      >
-        {setUp ? (
-          <>
-            <span className="size-1.5 shrink-0 rounded-full bg-success" />
-            Ged
-          </>
-        ) : (
-          <>
-            <span className="size-1.5 shrink-0 rounded-full border border-muted-foreground/60" />
-            Set up Ged
-          </>
-        )}
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        {setUp ? `${projectName} uses Ged` : `Add Ged's starter files to ${projectName}`}
-      </TooltipPopup>
-    </Tooltip>
+    <WorkspaceBreadcrumbItem>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => requestGedSetup({ environmentId, cwd, projectName })}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-muted-foreground text-xs transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            />
+          }
+        >
+          {setUp ? (
+            <>
+              <span className="size-1.5 shrink-0 rounded-full bg-success" />
+              Ged
+            </>
+          ) : (
+            <>
+              <span className="size-1.5 shrink-0 rounded-full border border-muted-foreground/60" />
+              Set up Ged
+            </>
+          )}
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          {setUp ? `${projectName} uses Ged` : `Add Ged's starter files to ${projectName}`}
+        </TooltipPopup>
+      </Tooltip>
+    </WorkspaceBreadcrumbItem>
   );
 }

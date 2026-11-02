@@ -2,6 +2,23 @@
 
 Ongoing log of project progress.
 
+## 2026-11-02 — Current upstream feature set integrated
+
+Integrated upstream `30084f0018c5751a07291222e8d04e16d513700a` on an isolated branch for GedCode
+0.6.0, preserving Ged identity, Sparkle's signing trust anchor, memory/setup/review tools, disabled
+analytics, and legacy database recovery. Incoming features include project cloning to another
+machine with selected ignored files, cross-environment transcript context, peer-linked delegation,
+isolated task worktrees, side chats, local-commit review, project pin/archive, one-time schedules,
+and service resource protection. Project cloning leaves local files intact and does not migrate
+dirty work or conversation history.
+
+Moved to upstream's Node 26.12.1 / pnpm 12.14.0 toolchain and retired the duplicate Claude entrypoint
+backport. Ged instructions now reach numbered Codex context sections within the per-entry byte
+limit. Sparkle prepares the upstream server compile cache before signing. Updated identity,
+permission, legacy-data and platform fixtures against the current interfaces; historical gate bytes
+remain unchanged where they identify a safe migration. Builds and focused checks are recorded in
+the integration handoff; this entry does not claim a release has been published or a live VM upgraded.
+
 ## 2026-11-02 — Durable Proxmox environment provisioned
 
 Deployed source `0bfaa781` as a production Linux build in dedicated Debian 13 VM 106

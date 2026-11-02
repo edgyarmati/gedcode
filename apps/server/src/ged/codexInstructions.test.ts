@@ -1,13 +1,25 @@
 import { assert, describe, it } from "@effect/vitest";
+import { GED_AGENT_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 
-import { buildCodexAdditionalContext } from "../provider/CodexDeveloperInstructions.ts";
+import {
+  buildCodexAdditionalContext,
+  CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES,
+} from "../provider/CodexDeveloperInstructions.ts";
 
 describe("Ged in Codex turn context", () => {
-  it("tells Codex to check Ged memory on every turn's T3 context", () => {
+  it("delivers the full Ged section within Codex's per-entry byte limit", () => {
     const context = buildCodexAdditionalContext({
-      model: "gpt-5.3-codex",
+      model: "gpt-6.1-sol",
       reasoningEffort: "high",
     });
-    assert.include(context.t3_code_orchestration!.value, "call `ged_memory_list`");
+    const sections = Object.entries(context)
+      .filter(([key]) => /^t3_code_orchestration_\d{2}$/.test(key))
+      .toSorted(([left], [right]) => left.localeCompare(right))
+      .map(([, entry]) => entry.value);
+    assert.isNotEmpty(sections);
+    assert.include(sections.join("\n\n"), GED_AGENT_INSTRUCTIONS.trim());
+    for (const section of sections) {
+      assert.isAtMost(Buffer.byteLength(section, "utf8"), CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES);
+    }
   });
 });

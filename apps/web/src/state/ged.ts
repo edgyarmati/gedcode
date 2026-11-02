@@ -11,9 +11,11 @@ import { connectionAtomRuntime } from "../connection/runtime";
  * them on confirmation. Web-only, because this fork does not build the mobile
  * app.
  */
-export const gedSetupPreview = createEnvironmentRpcCommand(connectionAtomRuntime, {
+export const gedSetupPreview = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:ged:setup-preview",
   tag: WS_METHODS.gedSetupPreview,
+  staleTimeMs: 0,
+  idleTtlMs: 0,
 });
 
 export const gedSetupApply = createEnvironmentRpcCommand(connectionAtomRuntime, {

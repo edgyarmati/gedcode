@@ -243,7 +243,7 @@ if (foreign.length === 0) {
   const availability = verifiers.some((r) => r.otherVendorAvailable)
     ? "another vendor was installed; installation does not establish usable authentication, subscription or quota"
     : "no other vendor was installed";
-  console.error(`WARNING: same-provider review — verified only by the implementer vendor (${iv}); ${availability}. Cross-vendor review is preferred.`);
+  console.error(`WARNING: same-provider review: verified only by the implementer vendor (${iv}); ${availability}. Cross-vendor review is preferred.`);
   for (const r of verifiers) {
     if (r.selectionReason) console.error(`WARNING: reviewer selection (${r.who}): ${r.selectionReason}`);
   }

@@ -10,13 +10,8 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 
 /**
- * Remembers which projects an agent has already offered Ged setup in.
- *
- * Agents keep nothing between threads, so "offer it the first time" needs the
- * server to remember. The record lives in GedCode's own state directory, never
- * in the user's checkout: declining setup must not leave a file in their repo.
- * One empty marker per project, created exclusively, so two threads opening at
- * once still produce a single offer.
+ * Claim one setup offer per project across threads, using exclusive markers in app state.
+ * Declining setup leaves the checkout untouched; concurrent threads cannot repeat the offer.
  */
 export class GedSetupOffers extends Context.Service<
   GedSetupOffers,

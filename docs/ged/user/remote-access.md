@@ -73,6 +73,21 @@ Provider CLIs must be on the `PATH` of a non-interactive login shell there; chec
 ssh user@example.com 'sh -lc "command -v claude codex"'
 ```
 
+## Open a project on another machine
+
+Pair the VM in **Settings → Connections** first. Start a new thread in the local project,
+open **Run on**, and choose **Add project to another machine**. Choose the VM, its destination
+folder, and any ignored files you want to copy, such as local configuration. Review that list before
+starting: selected files are sent to the VM.
+
+GedCode clones the project's Git remote there. Push the commits you need first. The source stays
+intact; existing conversations, uncommitted changes, and ordinary untracked files are not migrated.
+The selected ignored-file transfer supports text files up to 1 MiB each, with up to 200 candidates.
+Provider credentials and installed tools belong to the destination machine.
+
+After the clone completes, new work runs on the VM and continues when this client disconnects.
+Dependencies and project services still need to be installed or started there as the project requires.
+
 ## Connect an outside agent
 
 Claude Code, Codex and other agents GedCode did not start can drive threads through the environment's

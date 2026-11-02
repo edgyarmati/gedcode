@@ -33,12 +33,13 @@ PM thread            the project root, no code edits
 Task lead            its own worktree, one per unit of work
   │                  decides what to delegate and to whom
   ▼
-Role children        planner / implementer / verifier, sharing the lead's checkout
+Role children        planner / implementer / verifier, shared or isolated checkout
 ```
 
 Leads run in parallel without colliding, because each owns a private checkout. Within a lead, the
-children are ordinary delegated tasks, so you can watch them, inspect them and cancel them from the
-UI exactly like any other orchestrator work.
+children are delegated tasks, so you can watch them, inspect them and cancel them from the
+UI. Children share the lead's checkout by default; an isolated task gets a private worktree from
+the parent commit. Uncommitted changes are excluded from that worktree.
 
 There is no state machine. A typo fix delegates nothing; a refactor might delegate a planner, two
 implementers and three rounds of verification. The lead chooses, guided by the lead playbook. A small change

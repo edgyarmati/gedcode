@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import { SPARKLE_ED_PUBLIC_KEY, sparkleAppcastUrl } from "@t3tools/shared/sparkleUpdate";
+import * as NodeURL from "node:url";
 
 import { SPARKLE_AFTER_PACK_SCRIPT, applySparkleBuildConfig } from "./buildConfig.ts";
 
@@ -7,6 +8,7 @@ const baseConfig = {
   appId: "com.example.app",
   files: ["!**/*.map"],
   extraResources: [{ from: "a", to: "b" }],
+  afterPack: NodeURL.fileURLToPath(new URL("../prepare-server-compile-cache.cjs", import.meta.url)),
   mac: {
     target: ["dmg", "zip"],
     extendInfo: { NSLocalNetworkUsageDescription: "local network" },
@@ -77,6 +79,7 @@ describe("applySparkleBuildConfig", () => {
         localizations: ["en-US"],
       });
       assert.strictEqual(other, baseConfig);
+      assert.equal(other.afterPack, baseConfig.afterPack);
     }
   });
 

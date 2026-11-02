@@ -75,7 +75,7 @@ GedCode uses [Vite+](https://viteplus.dev/guide/), so install the global `vp` to
 curl -fsSL https://vite.plus | bash   # Windows: irm https://vite.plus/ps1 | iex
 ```
 
-Then, from the repository root (Node 24 required):
+Then, from the repository root (Node 26.12.1 required):
 
 ```bash
 vp i
@@ -83,7 +83,8 @@ vp run dev
 ```
 
 Open the pairing URL the dev runner prints — the bare origin does not authenticate a new browser.
-The checks are `vp fmt`, `vp lint`, `vp run -r typecheck` and `vp test run`. The
+Run checks for the affected files and packages with `vp fmt <files>`, `vp lint <files>`,
+`vp run --filter <package> typecheck` and `vp test run <files>`. The
 [development runbook](./docs/operations/development.md) has the rest.
 
 ## Project status

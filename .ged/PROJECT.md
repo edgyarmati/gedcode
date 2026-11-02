@@ -6,31 +6,29 @@ a structured development discipline where work is planned, implemented, and inde
 with durable project memory under `.ged/` and structural guards that enforce the discipline from
 outside the model's control.
 
-Status: **early WIP, mid-rebase.** Sweeping changes that improve long-term maintainability are
-welcome.
+Status: **active fork; upstream feature integration targets GedCode 0.6.0.**
 
 ## Base
 
-This tree is a fresh checkout of T3 Code `main` @ `9afde1c6d` (#17848), not a continuation of the
-v0.4 GedCode history. v0.4 forked at `e3accd6e95` and diverged by 741 / 3775 commits; upstream had
-since deleted every file v0.4 integrated through (`wsServer.ts`, `providerManager.ts`,
-`codexAppServerManager.ts`, `contracts/src/orchestration.ts`, `web/src/store.ts`). There was no
-clean-merge surface, so the base was retaken and the Ged layer is being re-landed additively.
+This tree integrates T3 Code `main` @ `30084f0018c5751a07291222e8d04e16d513700a` (2026-11-02).
+The additive Ged layer was first rebuilt on `9afde1c6d` after v0.4's integration seams were removed
+upstream. That history explains the legacy-data importer; it is not a reason to restore the old
+orchestrator. See [DECISIONS.md](./DECISIONS.md).
 
 The v0.4 repository remains at `~/projects/gedcode-v0.4` as a read-only reference.
 
 ### Naming
 
 GedCode is one product on one version line. The fork that ran from `e3accd6e95` to `c3a9813f39` is
-the **0.4.x** tree; this one continues as **0.5.x**. The engine underneath changed completely, but
+the **0.4.x** tree; this one continues on the **0.5.x and 0.6.x** line. The engine underneath changed completely, but
 the thing users install did not, and there are real 0.4.8 installs on a live Sparkle feed that have
-to see 0.5.x as newer. A generation number that reset to 1.0 would have stranded them.
+to see subsequent Ged versions as newer. A generation number that reset to 1.0 would have stranded them.
 
-`v0.5` names this tree; `v0.4` names the old one. Upstream's own uppercase `V1` / `V2` — the V2
+`v0.5` and `v0.6` name this tree; `v0.4` names the old one. Upstream's own uppercase `V1` / `V2` — the V2
 orchestrator, the V1 sqlite projections — are a separate scheme, unversioned by us and not ours to
 renumber.
 
-Package manifests stay on upstream's `0.0.45` train. The release version is a build input
+Package manifests stay on upstream's version train (currently `0.1.6`). The release version is a build input
 (`--build-version` / `T3CODE_DESKTOP_VERSION`), so shipping 0.5.x costs no upstream file edit.
 
 Upstream's V2 orchestrator replaces v0.4's durable `plan → work → verify` state machine. It is
@@ -40,12 +38,10 @@ verifier independence, per-role model policy, the land gate — is specified in
 
 ## What is ours
 
-Everything Ged-specific is additive. Five upstream files are modified and each one is argued for in
-[DECISIONS.md](./DECISIONS.md): ten lines in `apps/server/src/mcp/McpHttpServer.ts`, because its
-layer merge is the only place an MCP toolkit can be registered; `.github/pull_request_template.md`;
-and the three that take the out-of-scope Expo app out of the workspace. See the additive-only
-constraint in [STANDARDS.md](./STANDARDS.md#additive-only-constraint) for the table a new entry has
-to get past.
+Ged functionality is additive wherever possible. Required upstream assembly, identity, packaging,
+and permission seams are recorded in [STANDARDS.md](./STANDARDS.md#additive-only-constraint).
+Keep those changes minimal; a sync must preserve both current upstream behavior and Ged's data,
+update trust anchor, memory and independent-review policy.
 
 - `.ged/` — project memory: these documents, model notes, plans, and verdict records.
 - `apps/server/src/ged/ProjectMemory.ts` — the path-confined reader/writer for that tree.
@@ -73,7 +69,7 @@ is needed only for desktop artifact builds and `test:resource-monitor`.
 ### Bootstrap
 
 ```sh
-node --version                                   # must be >= 24.13.1
+node --version                                   # must be 26.12.1
 curl -fsSL https://vite.plus | bash              # install the global vp binary
 vp i
 vp run --filter @t3tools/desktop ensure:electron
@@ -90,9 +86,8 @@ authenticate. Server is 13773, web 5733, offset per worktree. Dev state lives in
 - Provider auth, configuration, and running applications are operator-owned.
 - Model availability is account-specific and discovered at runtime. Verify model IDs against the
   authenticated catalog or official vendor documentation — never from naming guesses.
-- Release process is upstream's; v0.4's `release.sh` and its gate policy do not apply here.
-- macOS auto-update is a **kept v0.4 capability, not yet rebuilt.** Upstream's `electron-updater`
-  cannot update an ad-hoc-signed macOS app; Sparkle 2 can, which is why v0.4 used it and why
-  0.5.x will.
-  Planned in [plans/sparkle-updates/](./plans/sparkle-updates/SPEC.md), with its upstream cost
-  accounted for there. Until it lands, macOS releases are manual downloads.
+- Ged's release path is `.github/workflows/ged-release.yml`; upstream npm and hosted-infrastructure
+  workflows must stay disabled in this fork. Do not push or publish without explicit authorization.
+- macOS auto-update uses Sparkle with a stable EdDSA trust anchor and signed feeds. Preserve its
+  verification policy and execute upstream compile-cache preparation before the after-pack signing
+  hook. See [Sparkle updates](../docs/ged/sparkle-updates.md).

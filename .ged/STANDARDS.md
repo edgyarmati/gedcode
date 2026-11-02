@@ -12,17 +12,17 @@ rule worth stating twice is upstream's, below.
 
 | Concern         | Tool                                                                                           |
 | --------------- | ---------------------------------------------------------------------------------------------- |
-| Package manager | `pnpm@11.10.0` (`vp i`). **Never `bun install`.**                                              |
+| Package manager | `pnpm@12.14.0` (`vp i`). **Never `bun install`.**                                              |
 | Runner / tests  | Vite+ (`vp`), a **global** binary — not a devDependency                                        |
 | Test framework  | `vp test run`. Vitest is dropped via override; `@effect/vitest` is patched to `vite-plus/test` |
-| TypeScript      | `7.0.2` pinned, patched in place by `effect-tsgo@0.46.1`                                       |
-| Node            | `^24.13.1`                                                                                     |
+| TypeScript      | `npm:@tsc-rs/typescript@0.8.0` (upstream compiler)                                             |
+| Node            | `26.12.1`                                                                                      |
 
 `vp` installs via `curl -fsSL https://vite.plus | bash` (docs: <https://viteplus.dev/guide/>).
 CI uses `voidzero-dev/setup-vp@v1`.
 
-The `prepare` script runs `effect-tsgo patch && vp config --no-agent` — the patch mutates the
-installed TypeScript, so package versions alone do not prove it is active.
+The `prepare` script runs `vp config --no-agent`. Upstream now ships the compiler through
+`@tsc-rs/typescript`; the old `effect-tsgo` patch is retired.
 
 ### Commands
 
@@ -71,60 +71,55 @@ change, keep the diff minimal and record it in [DECISIONS.md](./DECISIONS.md).
 
 The whole modified surface, which a PR must justify adding to:
 
-| File                                                             | Lines   | Why                                                              |
-| ---------------------------------------------------------------- | ------- | ---------------------------------------------------------------- |
-| `apps/server/src/mcp/McpHttpServer.ts`                           | 15      | The only assembly point for MCP toolkits                         |
-| `.github/pull_request_template.md`                               | +16/−24 | Upstream's is written for outside contributors                   |
-| `pnpm-workspace.yaml`                                            | 10      | Drops `apps/mobile`; `allowBuilds` for the Sparkle package       |
-| `knip.jsonc`                                                     | 36      | Scopes the export audit off mobile-only upstream exports         |
-| `pnpm-lock.yaml`                                                 | gen     | Generated; regenerate on conflict, never merge by hand           |
-| `README.md`                                                      | all     | Upstream's is T3 Code branding and T3 Code installers            |
-| `CONTRIBUTING.md`                                                | +14/−4  | Fork preamble; upstream repo links; triage is manual here        |
-| `LICENSE`                                                        | 1       | Adds our copyright line; upstream's is retained                  |
-| `AGENTS.md`                                                      | 13      | Appended overlay pointing at `.ged/`; overrides nothing          |
-| `apps/desktop/src/main.ts`                                       | 4       | Sparkle updater layer on macOS; the 0.4 upgrade notice           |
-| `apps/server/src/persistence/initializeV2Database.ts`            | +6/−3   | Upgrade 0.4 snapshots; recover legacy-only failed imports safely |
-| `apps/desktop/src/updates/updatesTestHarness.ts`                 | +20/−9  | Lets tests inject the Sparkle updater layer                      |
-| `apps/desktop/package.json`                                      | 1       | `electron-sparkle-updater` dependency                            |
-| `apps/server/package.json`                                       | 1       | Pin patched `node-pty` for lockfile-free desktop staging         |
-| `scripts/package.json`                                           | 1       | Same dependency, for the after-pack hook                         |
-| `scripts/lib/desktop-external-packages.ts`                       | 1       | Ships the Sparkle package in the staged app                      |
-| `scripts/build-desktop-artifact.ts`                              | 17      | Applies Sparkle config, stages the framework (additions)         |
-| `packages/shared/package.json`                                   | 4       | `./sparkleUpdate` subpath export                                 |
-| `packages/contracts/src/{rpc,index,clientRpcPermissions}.ts`     | +7      | Registers the Ged setup RPCs, defined in `ged.ts`; guards apply  |
-| `apps/server/src/auth/RpcAuthorization.ts`                       | +2      | Every RPC must declare its scope; setup reads and writes files   |
-| `apps/server/src/observability/RpcInstrumentation.ts`            | +2      | Every RPC must declare its instrumentation category              |
-| `apps/server/src/ws.ts`                                          | +3      | Spreads `ged/GedRpcHandlers.ts` into the WebSocket handlers      |
-| `apps/web/src/routes/__root.tsx`                                 | +3      | Mounts the Ged setup dialog host                                 |
-| `apps/web/src/components/settings/ProjectSettingsPanel.tsx`      | +6      | Project settings entry point for Ged setup                       |
-| `apps/web/src/components/CommandPalette.tsx`                     | +11     | Command palette entry point for Ged setup                        |
-| `apps/web/src/components/chat/ChatHeader.tsx`                    | +6      | Ged status beside the project name; opens setup                  |
-| `packages/provider-core/src/server/orchestrationInstructions.ts` | +5/−1   | Per-turn agent instructions carry Ged's (`gedInstructions.ts`)   |
+| File                                                                            | Lines   | Why                                                              |
+| ------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------- |
+| `apps/server/src/mcp/McpHttpServer.ts`                                          | 15      | The only assembly point for MCP toolkits                         |
+| `.github/pull_request_template.md`                                              | +16/−24 | Upstream's is written for outside contributors                   |
+| `vite.config.ts`                                                                | 2       | Excludes mobile from root test project discovery                 |
+| `pnpm-workspace.yaml`                                                           | 10      | Drops `apps/mobile`; `allowBuilds` for the Sparkle package       |
+| `knip.jsonc`                                                                    | 36      | Scopes the export audit off mobile-only upstream exports         |
+| `pnpm-lock.yaml`                                                                | gen     | Generated; regenerate on conflict, never merge by hand           |
+| `README.md`                                                                     | all     | Upstream's is T3 Code branding and T3 Code installers            |
+| `CONTRIBUTING.md`                                                               | +14/−4  | Fork preamble; upstream repo links; triage is manual here        |
+| `LICENSE`                                                                       | 1       | Adds our copyright line; upstream's is retained                  |
+| `AGENTS.md`                                                                     | 13      | Appended overlay pointing at `.ged/`; overrides nothing          |
+| `apps/desktop/src/main.ts`                                                      | 4       | Sparkle updater layer on macOS; the 0.4 upgrade notice           |
+| `apps/server/src/persistence/initializeV2Database.ts`                           | +6/−3   | Upgrade 0.4 snapshots; recover legacy-only failed imports safely |
+| `apps/desktop/src/updates/updatesTestHarness.ts`                                | +20/−9  | Lets tests inject the Sparkle updater layer                      |
+| `apps/desktop/package.json`                                                     | 1       | `electron-sparkle-updater` dependency                            |
+| `apps/server/package.json`                                                      | 1       | Pin patched `node-pty` for lockfile-free desktop staging         |
+| `scripts/package.json`                                                          | 1       | Same dependency, for the after-pack hook                         |
+| `scripts/lib/desktop-external-packages.ts`                                      | 1       | Ships the Sparkle package in the staged app                      |
+| `scripts/build-desktop-artifact.ts`                                             | 17      | Applies Sparkle config, stages the framework (additions)         |
+| `packages/shared/package.json`                                                  | 4       | `./sparkleUpdate` subpath export                                 |
+| `packages/contracts/src/{rpc,index,clientRpcPermissions}.ts`                    | +7      | Registers the Ged setup RPCs, defined in `ged.ts`; guards apply  |
+| `apps/server/src/auth/RpcAuthorization.ts`                                      | +2      | Every RPC must declare its scope; setup reads and writes files   |
+| `apps/server/src/observability/RpcInstrumentation.ts`                           | +2      | Every RPC must declare its instrumentation category              |
+| `packages/client-runtime/src/state/commandPermissions.test.ts`                  | +35     | Destination-scoped Ged setup authorization regression            |
+| `apps/server/src/provider/{AgentContextBudget.test.ts,agentContextBudget.json}` | small   | Measures the real Ged tool and instruction payload               |
+| `apps/server/src/ws.ts`                                                         | +3      | Spreads `ged/GedRpcHandlers.ts` into the WebSocket handlers      |
+| `apps/web/src/routes/__root.tsx`                                                | +3      | Mounts the Ged setup dialog host                                 |
+| `apps/web/src/components/settings/ProjectSettingsPanel.tsx`                     | +6      | Project settings entry point for Ged setup                       |
+| `apps/web/src/components/CommandPalette.tsx`                                    | +11     | Command palette entry point for Ged setup                        |
+| `apps/web/src/components/chat/ChatHeader.tsx`                                   | +6      | Ged status beside the project name; opens setup                  |
+| `packages/provider-core/src/server/orchestrationInstructions.ts`                | +5/−1   | Per-turn agent instructions carry Ged's (`gedInstructions.ts`)   |
 
-The Claude metering backport also modifies these upstream seams. The merge helper and its
-regression tests are additive (`ClaudeProcessEnvironment.ts` and `.test.ts`); settings discovery
-continues to use the existing Claude paths. See the 2026-11-02 decision.
-
-| File                                                           | Why                                                                                 |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `apps/server/src/provider/Drivers/ClaudeSkills.ts`             | Read the entrypoint through existing config-dir and user/managed settings discovery |
-| `apps/server/src/provider/Drivers/ClaudeDriver.ts`             | Use the shared Claude process environment for probes and text generation            |
-| `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` | Use the same merge for turn sessions                                                |
+The Claude metering backport is retired at upstream `30084f0018c5751a07291222e8d04e16d513700a`: upstream now owns the shared process-environment merge in `ClaudeHome.ts`, including settings entrypoint precedence and inherited-session cleanup. Do not restore the duplicate Ged helper.
 
 The rebrand (see [DECISIONS.md](./DECISIONS.md), "GedCode's identity is set in source") adds
 one-to-few-line edits wherever upstream hard-codes its product identity. Each is a string or
 constant swap; none changes behavior beyond the name, origin, or path it carries:
 
-| Area             | Files                                                                                                                                                                                                                                                                                                                 | Why                                                                                                                         |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Desktop identity | `apps/desktop/src/app/{DesktopEnvironment,DesktopAppIdentity,DesktopEarlyElectronStartup,DesktopUserData,DesktopLegacyLocalStorage,DesktopStatePaths}.ts`, `apps/desktop/src/{compileCache.ts,electron/ElectronProtocol.ts}`                                                                                          | App name, bundle id, URL scheme, userData and home directories                                                              |
-| Server identity  | `apps/server/src/{os-jank.ts,http.ts,cli/browser.ts,cli/triagePrompt.ts,cloud/bootService.ts,project/AgentSessionScanner.ts,project/ManagedProjectFolders.ts,provider/ModelManifest.ts,telemetry/AnalyticsService.ts}`, `apps/server/scripts/{migrate-dev-db,t3-sqlite-state}.ts`                                     | Home dir, origins, repo links; T3's analytics key removed (telemetry off)                                                   |
-| Shared identity  | `packages/shared/src/{cliRelease,codexAuthHandoff,providerAuthReturnUrl}.ts`, `packages/contracts/src/t3ProjectFile.ts`, `packages/source-control-github/src/server/githubStackRebase.ts`                                                                                                                             | Release repo, app scheme, schema text, rebase committer                                                                     |
-| Web identity     | `apps/web/index.html`, `apps/web/src/{branding.ts,legalLinks.ts,components/T3Wordmark.tsx,components/NightlyMobileBeta.tsx,components/desktopUpdate.logic.ts,components/settings/pairingUrls.ts,components/sidebar/SidebarChrome.tsx,components/onboarding/WelcomeWizard.tsx,components/settings/SettingsPanels.tsx}` | Name, mark, links, privacy claims; no T3 hosted app or mobile beta. The sidebar name is also centered (layout classes only) |
-| Build            | `scripts/build-desktop-artifact.ts` (+14), `scripts/dev-runner.ts`, `.env.example`                                                                                                                                                                                                                                    | Product name rewritten at stage time; no T3 cloud identifiers                                                               |
-| Art              | `assets/{prod,nightly,dev}/**`, `apps/web/public/*` icons, `apps/desktop/resources/dmg/*.svg`                                                                                                                                                                                                                         | GedCode icons and DMG text, replaced wholesale                                                                              |
-| CLI and names    | `apps/server/src/{binCli.ts,cli/invocation.ts,git/GitManager.ts}`, `apps/desktop/src/app/{DesktopCliShim,DesktopCliCommand}.ts`, `packages/shared/src/git.ts`, `packages/contracts/src/settings.ts`, `packages/source-control-bitbucket/src/server/BitbucketApi.ts`                                                   | `gedcode` command and launcher, `gedcode.json`, `gedcode/` branch prefix                                                    |
-| Tests and triage | Tests that assert the identity, wherever they live (`git diff --name-only upstream/main...HEAD -- '*.test.ts' '*.test.tsx'`), `.github/triage/PLAYBOOK.md`                                                                                                                                                            | Restate upstream's assertions for the new identity                                                                          |
+| Area             | Files                                                                                                                                                                                                                                                                                    | Why                                                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Desktop identity | `apps/desktop/src/app/{DesktopEnvironment,DesktopAppIdentity,DesktopEarlyElectronStartup,DesktopUserData,DesktopLegacyLocalStorage,DesktopStatePaths}.ts`, `apps/desktop/src/{compileCache.ts,electron/ElectronProtocol.ts}`                                                             | App name, bundle id, URL scheme, userData and home directories                                                              |
+| Server identity  | `apps/server/src/{os-jank.ts,httpCors.ts,cli/browser.ts,triage/triagePrompt.ts,cloud/bootService.ts,project/AgentSessionScanner.ts,project/ManagedProjectFolders.ts,provider/ModelManifest.ts,telemetry/AnalyticsService.ts}`, `apps/server/scripts/{migrate-dev-db,t3-sqlite-state}.ts` | Home dir, origins, repo links; T3's analytics key removed (telemetry off)                                                   |
+| Shared identity  | `packages/shared/src/{cliRelease,codexAuthHandoff,providerAuthReturnUrl,remote,promptLinks}.ts`, `packages/contracts/src/t3ProjectFile.ts`, `packages/source-control-github/src/server/githubStackRebase.ts`                                                                             | Release repo, app scheme, schema text, rebase committer                                                                     |
+| Web identity     | `apps/web/index.html`, `apps/web/src/{branding.ts,legalLinks.ts,components/T3Wordmark.tsx,components/desktopUpdate.logic.ts,components/settings/pairingUrls.ts,components/sidebar/SidebarChrome.tsx,components/onboarding/WelcomeWizard.tsx,components/settings/SettingsPanels.tsx}`     | Name, mark, links, privacy claims; no T3 hosted app or mobile beta. The sidebar name is also centered (layout classes only) |
+| Build            | `scripts/build-desktop-artifact.ts` (+14), `scripts/dev-runner.ts`, `.env.example`                                                                                                                                                                                                       | Product name rewritten at stage time; no T3 cloud identifiers                                                               |
+| Art              | `assets/{prod,nightly,dev}/**`, `apps/web/public/*` icons, `apps/desktop/resources/dmg/*.svg`                                                                                                                                                                                            | GedCode icons and DMG text, replaced wholesale                                                                              |
+| CLI and names    | `apps/server/src/{binCli.ts,cli/invocation.ts,git/GitManager.ts}`, `apps/desktop/src/app/{DesktopCliShim,DesktopCliCommand}.ts`, `packages/shared/src/git.ts`, `packages/contracts/src/settings.ts`, `packages/source-control-bitbucket/src/server/BitbucketApi.ts`                      | `gedcode` command and launcher, `gedcode.json`, `gedcode/` branch prefix                                                    |
+| Tests and triage | Tests that assert the identity, wherever they live (`git diff --name-only upstream/main...HEAD -- '*.test.ts' '*.test.tsx'`), `.github/triage/PLAYBOOK.md`                                                                                                                               | Restate upstream's assertions for the new identity                                                                          |
 
 The same rule shapes CI. Upstream's workflows are **not** edited: the ones that cannot run here —
 Blacksmith runners, T3's Cloudflare and hosting credentials, the dropped mobile app, T3's

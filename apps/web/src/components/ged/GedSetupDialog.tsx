@@ -9,6 +9,7 @@ import { create } from "zustand";
 
 import { gedSetupApply, gedSetupPreview, gedSetupStatus } from "../../state/ged";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useEnvironmentQuery } from "../../state/query";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -45,6 +46,7 @@ function close() {
 
 export function GedSetupDialogHost() {
   const target = useTarget((state) => state.target);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Release the global dialog request when its root host unmounts.
   useEffect(() => () => close(), []);
   return target ? (
     <GedSetupDialog key={`${target.environmentId}:${target.cwd}`} target={target} />
@@ -63,31 +65,22 @@ type PreviewState =
   | { readonly _tag: "failed"; readonly message: string };
 
 function GedSetupDialog({ target }: { readonly target: GedSetupTarget }) {
-  const preview = useAtomCommand(gedSetupPreview, { reportFailure: false });
+  const preview = useEnvironmentQuery(
+    gedSetupPreview({ environmentId: target.environmentId, input: { cwd: target.cwd } }),
+  );
   const apply = useAtomCommand(gedSetupApply, { reportFailure: false });
   const canApply = useAtomValue(gedSetupApply.permissionAtom(target.environmentId));
   const refreshStatus = useAtomRefresh(
     gedSetupStatus({ environmentId: target.environmentId, input: { cwd: target.cwd } }),
   );
-  const [state, setState] = useState<PreviewState>({ _tag: "loading" });
+  const [applyError, setApplyError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void preview({ environmentId: target.environmentId, input: { cwd: target.cwd } }).then(
-      (result) => {
-        if (cancelled || isAtomCommandInterrupted(result)) return;
-        setState(
-          result._tag === "Success"
-            ? { _tag: "ready", plan: result.value }
-            : { _tag: "failed", message: errorMessage(squashAtomCommandFailure(result)) },
-        );
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [preview, target.cwd, target.environmentId]);
+  const error = applyError ?? preview.error;
+  const state: PreviewState = error
+    ? { _tag: "failed", message: error }
+    : preview.data
+      ? { _tag: "ready", plan: preview.data }
+      : { _tag: "loading" };
 
   const missing = state._tag === "ready" ? state.plan.missing : [];
 
@@ -97,7 +90,7 @@ function GedSetupDialog({ target }: { readonly target: GedSetupTarget }) {
     setApplying(false);
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result))
-        setState({ _tag: "failed", message: errorMessage(squashAtomCommandFailure(result)) });
+        setApplyError(errorMessage(squashAtomCommandFailure(result)));
       return;
     }
     toastManager.add({

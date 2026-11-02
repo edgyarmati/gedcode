@@ -1,10 +1,4 @@
-/**
- * What every agent with GedCode's MCP server is told about Ged. It rides in the
- * per-turn orchestration instructions, the channel agents reliably follow; MCP
- * server instructions alone were not enough to make them call the tool. The
- * text is the same for every project, so it covers one with `.ged/` and one
- * without.
- */
+/** Ged memory and review policy is delivered through every provider instruction channel. */
 export const GED_AGENT_INSTRUCTIONS = `
 
 ## GedCode project memory (Ged)

@@ -14,6 +14,7 @@ export function gedSetupPaletteItem(target: GedSetupTarget): CommandPaletteActio
         Set up Ged in <span className="font-semibold">{target.projectName}</span>
       </>
     ),
+    searchTitle: `Set up Ged in ${target.projectName}`,
     icon: <NotebookPenIcon className={ITEM_ICON_CLASS} />,
     run: async () => requestGedSetup(target),
   };

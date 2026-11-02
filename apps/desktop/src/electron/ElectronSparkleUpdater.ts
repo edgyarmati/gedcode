@@ -9,41 +9,10 @@ import { SPARKLE_ED_PUBLIC_KEY, sparkleAppcastUrl } from "@t3tools/shared/sparkl
 
 import * as ElectronUpdater from "./ElectronUpdater.ts";
 
-/**
- * A second implementation of {@link ElectronUpdater.ElectronUpdater}, backed by
- * Sparkle instead of electron-updater, selected on macOS.
- *
- * electron-updater installs a macOS update through the system code signature,
- * so it cannot update an ad-hoc-signed build at all. Sparkle verifies the
- * archive with its own EdDSA signature over the download, which is what lets
- * this app update itself without an Apple Developer Program certificate.
- *
- * Everything above the service — `DesktopUpdates`, the update state machine,
- * the channel settings, the UI — talks to the interface and is untouched, so
- * this file has to speak electron-updater's protocol exactly:
- *
- * - **Events.** Sparkle's `checking` / `update-available` / `update-not-available`
- *   / `download-progress` / `update-downloaded` / `error` are re-emitted under
- *   electron-updater's names with electron-updater's payload shapes
- *   (`{ version, releaseNotes? }` and `{ percent }`).
- * - **Consent.** electron-updater finds an update, stops, and downloads only
- *   when `downloadUpdate` is called. Sparkle's silent user driver accepts the
- *   update as soon as it is found and starts downloading immediately. The gate
- *   below holds the progress and completion events back until `downloadUpdate`
- *   is called, then releases them, so the user-facing flow is unchanged.
- * - **Completion.** `downloadUpdate` resolves when the download finishes, as
- *   electron-updater's promise does, not when the request is made.
- * - **Re-checks.** Once Sparkle has accepted an update, its session stays open
- *   until the update is installed, and a `checkForUpdates` call on the bridge
- *   is deferred with no event in reply. DesktopUpdates polls regardless, so
- *   while a session is open a check replays the update already on offer
- *   instead of reaching the bridge, as electron-updater answers a repeat check.
- *
- * Settings electron-updater exposes as mutable fields (`autoDownload`,
- * `allowPrerelease`, `fullChangelog`, differential downloads) have no Sparkle
- * equivalent: Sparkle picks the newest item its appcast offers, and each
- * channel has its own appcast. They are recorded and otherwise inert.
- */
+/** Sparkle verifies ad-hoc-signed macOS updates with EdDSA. This adapter must
+    preserve ElectronUpdater's event payloads, gate download events until asked,
+    await download completion, and replay offers while Sparkle defers re-checks.
+    DesktopUpdates owns scheduling, channels and install timing. */
 
 export class ElectronSparkleUpdaterUnavailableError extends Data.TaggedError(
   "ElectronSparkleUpdaterUnavailableError",
@@ -272,27 +241,44 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
   );
 
   return ElectronUpdater.ElectronUpdater.of({
-    setFeedURL: (options) =>
-      Effect.suspend(() => {
+    setFeedURL: Effect.fn("ElectronSparkleUpdater.setFeedURL")(function (options) {
+      return Effect.suspend(() => {
         const url = (options as { readonly url?: unknown }).url;
         feedUrlOverride = typeof url === "string" ? url : null;
         return reconfigureIfRunning;
-      }),
-    setAutoDownload: () => Effect.void,
-    setAutoInstallOnAppQuit: (value) =>
-      Effect.sync(() => {
-        autoInstallOnAppQuit = value;
-      }),
-    setChannel: (next) =>
-      Effect.suspend(() => {
+      });
+    }),
+    setAutoDownload: Effect.fn("ElectronSparkleUpdater.setAutoDownload")(function () {
+      return Effect.void;
+    }),
+    setAutoInstallOnAppQuit: Effect.fn("ElectronSparkleUpdater.setAutoInstallOnAppQuit")(
+      function (value) {
+        return Effect.sync(() => {
+          autoInstallOnAppQuit = value;
+        });
+      },
+    ),
+    setChannel: Effect.fn("ElectronSparkleUpdater.setChannel")(function (next) {
+      return Effect.suspend(() => {
         channel = next;
         return reconfigureIfRunning;
-      }),
-    setAllowPrerelease: () => Effect.void,
+      });
+    }),
+    setAllowPrerelease: Effect.fn("ElectronSparkleUpdater.setAllowPrerelease")(function () {
+      return Effect.void;
+    }),
     allowDowngrade: Effect.succeed(false),
-    setAllowDowngrade: () => Effect.void,
-    setFullChangelog: () => Effect.void,
-    setDisableDifferentialDownload: () => Effect.void,
+    setAllowDowngrade: Effect.fn("ElectronSparkleUpdater.setAllowDowngrade")(function () {
+      return Effect.void;
+    }),
+    setFullChangelog: Effect.fn("ElectronSparkleUpdater.setFullChangelog")(function () {
+      return Effect.void;
+    }),
+    setDisableDifferentialDownload: Effect.fn(
+      "ElectronSparkleUpdater.setDisableDifferentialDownload",
+    )(function () {
+      return Effect.void;
+    }),
     checkForUpdates: Effect.suspend(() => {
       if (offered !== null) {
         const payload = offered;
@@ -348,8 +334,11 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
         ),
       );
     }),
-    quitAndInstall: ({ isSilent, isForceRunAfter }) =>
-      ensureBridge.pipe(
+    quitAndInstall: Effect.fn("ElectronSparkleUpdater.quitAndInstall")(function ({
+      isSilent,
+      isForceRunAfter,
+    }) {
+      return ensureBridge.pipe(
         Effect.mapError(
           (cause) =>
             new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
@@ -372,8 +361,9 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
           }),
         ),
         Effect.asVoid,
-      ),
-    on: (eventName, listener) => {
+      );
+    }),
+    on: Effect.fn("ElectronSparkleUpdater.on")(function (eventName, listener) {
       const untyped = listener as unknown as (...args: Array<unknown>) => void;
       return Effect.acquireRelease(
         Effect.sync(() => {
@@ -389,7 +379,7 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
             if (registered.size === 0) listeners.delete(eventName);
           }),
       ).pipe(Effect.asVoid);
-    },
+    }),
   });
 }
 

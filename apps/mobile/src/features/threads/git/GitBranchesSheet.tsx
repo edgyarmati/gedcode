@@ -4,10 +4,11 @@ import { useState } from "react";
 import { Platform, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";
-import { MaterialScreenContent } from "../../../components/MaterialScreenContent";
+import { AndroidSheetHeader } from "../../../components/ui/AndroidScreenHeader";
+import { SheetHeader } from "../../../components/ui/SheetHeader";
+import { ScreenContent } from "../../../components/ui/ScreenContent";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
-import { AppText as Text, AppTextInput as TextInput } from "../../../components/AppText";
+import { AppText as Text, AppTextInput as TextInput } from "../../../components/ui/AppText";
 import { cn } from "../../../lib/cn";
 import { useEnvironmentQuery } from "../../../state/query";
 import { useThreadSelection } from "../../../state/use-thread-selection";
@@ -27,7 +28,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { selectedThread } = useThreadSelection();
-  const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
+  const { selectedThreadCwd } = useSelectedThreadWorktree();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const { canChangeThreadBranch } = gitActions;
@@ -42,15 +43,16 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   );
 
   const currentBranchLabel = gitStatus.data?.refName ?? selectedThread?.branch ?? "Detached HEAD";
-  const currentWorktreePath = selectedThreadWorktreePath;
+  const currentWorktreePath = selectedThreadCwd;
   const availableBranches = gitState.selectedThreadBranches;
   const branchesLoading = gitState.selectedThreadBranchesLoading;
   const busy = gitState.gitOperationLabel !== null;
 
   const [newBranchName, setNewBranchName] = useState("");
-  const [worktreeBaseBranch, setWorktreeBaseBranch] = useState(
-    currentBranchLabel === "Detached HEAD" ? "main" : currentBranchLabel,
-  );
+  const [worktreeBaseBranchOverride, setWorktreeBaseBranchOverride] = useState<string | null>(null);
+  const worktreeBaseBranch =
+    worktreeBaseBranchOverride ??
+    (currentBranchLabel === "Detached HEAD" ? "main" : currentBranchLabel);
   const [worktreeBranchName, setWorktreeBranchName] = useState("");
 
   const disabledExistingBranchNames: Array<string> = [];
@@ -81,10 +83,18 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
           onBack={() => navigation.goBack()}
           hideBottomBorder
         />
-      ) : null}
-      <MaterialScreenContent fitToContents>
+      ) : (
+        <SheetHeader
+          presentation="native"
+          title="Branches & worktrees"
+          onClose={() => navigation.goBack()}
+        />
+      )}
+      <ScreenContent fitToContents>
         <ScrollView
+          nestedScrollEnabled
           className="android:shrink android:grow-0 ios:flex-1"
+          contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentInset={{ bottom: Math.max(insets.bottom, 18) + 18 }}
@@ -132,7 +142,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
             ) : null}
             <TextInput
               value={worktreeBaseBranch}
-              onChangeText={setWorktreeBaseBranch}
+              onChangeText={setWorktreeBaseBranchOverride}
               placeholder="main"
               accessibilityLabel="Worktree base branch"
               className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"
@@ -227,7 +237,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
             })}
           </View>
         </ScrollView>
-      </MaterialScreenContent>
+      </ScreenContent>
     </View>
   );
 }

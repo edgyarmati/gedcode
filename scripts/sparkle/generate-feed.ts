@@ -1,23 +1,9 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off - Build-time release script: derives an Ed25519 public key and pipes the signing seed to Sparkle tools over stdin.
-/**
- * Generates and verifies a release's Sparkle appcast.
- *
- * Runs Sparkle's own `generate_appcast` over the release's macOS zip, then
- * refuses to write anything unless the result is a feed existing installs will
- * accept: the signing seed must match the public key embedded in the app, the
- * appcast must point at this release's archive, and both the appcast and the
- * archive signatures must verify with Sparkle's `sign_update`. Shipping an
- * unverifiable feed is worse than shipping none, so every check fails closed.
- *
- *   SPARKLE_ED_PRIVATE_KEY=<seed> node scripts/sparkle/generate-feed.ts \
- *     --tag v0.5.1 --release-assets-dir release \
- *     --output-dir feed --sparkle-bin <electron-sparkle-updater>/native/vendor/bin \
- *     [--release-notes docs/ged/releases/0.5.1.md]
- *
- * Release notes are embedded in the appcast, so Sparkle's update window shows
- * them to existing installs before they update.
- */
+/** Generate an appcast only if the seed matches the app's public key, the feed
+    points at this release, and Sparkle verifies both feed and archive signatures.
+    Release notes, when provided, are embedded for existing installs to read.
+    See docs/ged/sparkle-updates.md for the release procedure. */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
