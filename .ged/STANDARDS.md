@@ -100,6 +100,16 @@ The whole modified surface, which a PR must justify adding to:
 | `apps/web/src/components/chat/ChatHeader.tsx`                    | +6      | Ged status beside the project name; opens setup                  |
 | `packages/provider-core/src/server/orchestrationInstructions.ts` | +5/−1   | Per-turn agent instructions carry Ged's (`gedInstructions.ts`)   |
 
+The Claude metering backport also modifies these upstream seams. The merge helper and its
+regression tests are additive (`ClaudeProcessEnvironment.ts` and `.test.ts`); settings discovery
+continues to use the existing Claude paths. See the 2026-11-02 decision.
+
+| File                                                           | Why                                                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `apps/server/src/provider/Drivers/ClaudeSkills.ts`             | Read the entrypoint through existing config-dir and user/managed settings discovery |
+| `apps/server/src/provider/Drivers/ClaudeDriver.ts`             | Use the shared Claude process environment for probes and text generation            |
+| `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts` | Use the same merge for turn sessions                                                |
+
 The rebrand (see [DECISIONS.md](./DECISIONS.md), "GedCode's identity is set in source") adds
 one-to-few-line edits wherever upstream hard-codes its product identity. Each is a string or
 constant swap; none changes behavior beyond the name, origin, or path it carries:

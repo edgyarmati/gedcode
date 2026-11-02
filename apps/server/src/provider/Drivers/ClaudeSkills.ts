@@ -312,6 +312,45 @@ const resolveClaudeConfigDirPath = Effect.fn("resolveClaudeConfigDirPath")(funct
   return path.join(home, ".claude");
 });
 
+const decodeSettingsEntrypoint = Schema.decodeUnknownEffect(
+  fromLenientJson(
+    Schema.Struct({
+      env: Schema.optional(
+        Schema.Struct({ CLAUDE_CODE_ENTRYPOINT: Schema.optional(Schema.String) }),
+      ),
+    }),
+  ),
+);
+
+/** User and managed settings share the skill discovery paths; managed settings win. */
+export const readClaudeSettingsEntrypoint = Effect.fn("readClaudeSettingsEntrypoint")(function* (
+  config: Pick<ClaudeSettings, "homePath">,
+  environment: NodeJS.ProcessEnv,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const configDirPath = yield* resolveClaudeConfigDirPath(config, environment);
+  let entrypoint: string | undefined;
+  for (const settingsPath of skillOverrideSettingsPaths(
+    path,
+    configDirPath,
+    undefined,
+    platform,
+    environment,
+  )) {
+    const contents = yield* fileSystem
+      .readFileString(settingsPath)
+      .pipe(Effect.orElseSucceed(() => undefined));
+    if (contents === undefined) continue;
+    const parsed = yield* decodeSettingsEntrypoint(contents).pipe(
+      Effect.orElseSucceed(() => undefined),
+    );
+    entrypoint = parsed?.env?.CLAUDE_CODE_ENTRYPOINT ?? entrypoint;
+  }
+  return entrypoint;
+});
+
 /**
  * Enumerate Claude Code skills from the user config dir and the workspace
  * `.claude/skills`. Discovery is best-effort: unreadable roots and malformed

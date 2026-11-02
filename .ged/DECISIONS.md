@@ -649,3 +649,22 @@ custom gates are preserved.
 Review independence comes from fresh contexts with the original criteria and diff; vendor diversity
 is valuable but must not lock out users with one usable provider. No runtime scheduler, quota
 parser or provider-settings mutation is needed: selection stays in the lead playbook.
+
+## 2026-11-02 — Backport Claude's app-managed process entrypoint
+
+**Decision:** Backport [upstream PR #28410](https://github.com/pingdotgg/t3code/pull/28410),
+merged as `ddfc4a92edbdc934fede54c32f19be9ff5af1bb4` on 2026-11-02, without syncing unrelated
+upstream changes. App-managed Claude processes default to `CLAUDE_CODE_ENTRYPOINT=t3-code`,
+replacing inherited SDK/desktop labels. Provider-instance env overrides that default; user and
+then managed settings supply the final nonempty override, matching the upstream patch (an empty
+final settings value leaves the instance/default value). We do not impersonate `cli`.
+
+**Rationale:** This addresses the entrypoint implicated in upstream issue
+[#24649](https://github.com/pingdotgg/t3code/issues/24649). It does not guarantee Claude Code usage
+parity: Anthropic controls metering and account limits; no live usage comparison was performed.
+
+The additive `ClaudeProcessEnvironment.ts` owns the merge. Three upstream seams are necessary:
+`ClaudeDriver.ts` and `ClaudeAdapterV2.ts` route both process paths through it; `ClaudeSkills.ts`
+reads just the entrypoint using its existing config-dir resolution and settings-path discovery.
+This base predates upstream's settings-env reader; no endpoint behavior is backported. Terminals,
+other providers and wire contracts are unchanged. Missing/unreadable/invalid settings stay nonfatal.

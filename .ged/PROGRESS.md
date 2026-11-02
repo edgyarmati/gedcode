@@ -408,3 +408,19 @@ failures were not exercised; no provider settings or actual review exemptions we
 Prepared release notes for review opt-outs and same-provider fallback, including the explicit
 stock-gate upgrade needed by existing projects. Package manifests remain on the upstream version;
 the release workflow supplies 0.5.3 and validates the desktop artifacts and signed update feed.
+
+## 2026-11-02 — Claude metering entrypoint backport
+
+Implemented the focused entrypoint fix from upstream PR #28410
+(`ddfc4a92edbdc934fede54c32f19be9ff5af1bb4`): Claude turn sessions and driver probes/text generation
+share a `t3-code` default with instance and user/managed settings override precedence. Reuses
+existing settings discovery; no endpoint changes, dependencies or operator-settings changes.
+Regression coverage targets inherited SDK/desktop labels, override precedence, config-dir
+resolution, input immutability and missing/bad/unreadable settings. This does not guarantee usage
+parity with Claude Code; no real Claude requests or live metering comparison are part of this task.
+
+Checks passed: `vp fmt` on all eight changed files, `vp lint` on the five changed TypeScript
+files (one preexisting unused `layer` warning in `ClaudeAdapterV2.ts`), and
+`npx tsc --noEmit -p apps/server` (exit 0; Effect suggestions only). Focused `vp test run` passed
+216 tests across `ClaudeProcessEnvironment.test.ts`, `ClaudeHome.test.ts`, `ClaudeSkills.test.ts`
+and `ClaudeAdapterV2.test.ts`.
