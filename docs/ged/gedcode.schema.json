@@ -15,19 +15,12 @@
     },
     "defaultThreadEnvMode": {
       "type": "string",
-      "enum": [
-        "local",
-        "worktree"
-      ],
+      "enum": ["local", "worktree"],
       "description": "Where new threads start for this repository: \"worktree\" for a fresh git worktree, \"local\" for the current checkout. A per-project setting in GedCode overrides this; when neither is set, the global default applies."
     },
     "worktreeSubmodules": {
       "type": "string",
-      "enum": [
-        "recursive",
-        "top-level",
-        "none"
-      ],
+      "enum": ["recursive", "top-level", "none"],
       "description": "How new worktrees populate git submodules: \"recursive\" (the default) initializes nested submodules too, \"top-level\" initializes only those declared by this repository, and \"none\" leaves every submodule empty for a setup script to handle. A project or environment setting in GedCode overrides this."
     },
     "scripts": {
@@ -47,14 +40,7 @@
           },
           "icon": {
             "type": "string",
-            "enum": [
-              "play",
-              "test",
-              "lint",
-              "configure",
-              "build",
-              "debug"
-            ],
+            "enum": ["play", "test", "lint", "configure", "build", "debug"],
             "description": "Icon shown next to the script in the scripts menu. Defaults to \"play\"."
           },
           "runOnWorktreeCreate": {
@@ -79,10 +65,7 @@
             "description": "When true, automatically open the preview panel at `previewUrl` the moment the script starts."
           }
         },
-        "required": [
-          "name",
-          "command"
-        ],
+        "required": ["name", "command"],
         "additionalProperties": false,
         "description": "A project script that team members can import into GedCode."
       },
