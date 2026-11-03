@@ -59,6 +59,11 @@ and only then replaces the feed on `sparkle-feed`. A failed run can be rerun; it
 Only Apple Silicon is built. The feed carries exactly one archive, so an Intel build would need its
 own feed or a universal build.
 
+After an upstream sync adds workflow files, pause repository Actions before pushing `main` so
+new deployment and issue-automation workflows cannot run. Once GitHub registers them, disable
+the inapplicable workflows in repository settings, restore Actions, and manually run **Ged CI**
+against the pushed commit. Wait for its checks before pushing the release tag.
+
 ## Moving the signing key to another Mac
 
 Use the `generate_keys` binary from the same Sparkle release on both Macs. After a dependency install,

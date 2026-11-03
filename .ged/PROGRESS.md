@@ -2,6 +2,19 @@
 
 Ongoing log of project progress.
 
+## 2026-11-03 — GedCode 0.6.0 release preparation
+
+Prepared public release notes for the integration through upstream `30084f0018c5751a07291222e8d04e16d513700a`.
+Extended the existing file-scoped knip export exceptions for 18 flagged exports in 14 files,
+each with a current consumer in the excluded mobile app; runtime exports remain intact and
+unrelated export checks remain enabled.
+
+VM 0.6 deployment from `35aa3970b78c25b7ae21a1a899fd4afcb075d79c`, reboot, HTTPS and
+provider-ready checks succeeded, as did an isolated client project-transfer pass. The unchanged
+upstream GuestPage streaming-scroll test failure remains a known verification limitation.
+Public GitHub publication and the signed Sparkle release are pending; this metadata-only slice
+does not claim fresh check results.
+
 ## 2026-11-02 — Current upstream feature set integrated
 
 Integrated upstream `30084f0018c5751a07291222e8d04e16d513700a` on an isolated branch for GedCode
