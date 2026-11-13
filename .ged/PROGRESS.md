@@ -493,3 +493,27 @@ Focused temporary `pnpm@11.10.0 install --prod --ignore-scripts` installs reprod
 selecting beta.18 and failing with `ERR_PNPM_UNUSED_PATCH`; the exact pin installed beta.15 with
 the existing patch hash and both patched files verified. Changed-file format checks and three
 existing staged dependency/patch packaging tests passed. Native builds and publication were not rerun.
+
+## 2026-11-03 — Desktop startup export repair
+
+Confirmed the installed 0.6.0 client declares `T3` as `ArrowRight` but exports an undefined
+`GedCode`: whole-bundle branding rewrote `export {T3 as si}`. Staging now parses JavaScript and
+rebrands only string and template literal text, preserving bindings, expressions, regexes and
+comments. Module paths and quoted bindings are excluded, while template lookaheads retain version
+hint branding. Extended the staging test to load the resulting module and added it to Ged CI.
+
+The regression fails against the prior implementation; all eight identity tests pass with the
+fix, alongside scoped format, lint and scripts typecheck. A production web build passed; its 953
+JavaScript assets all pass Node's module syntax check after staging (the old rules break the utils
+chunk). Built-in Browser panel tools are unavailable, so desktop launch verification and a rebuilt
+installer remain pending. The installed app and live user data were not modified.
+
+## 2026-11-03 — 0.6.1 startup repair release preparation
+
+Prepared patch-release notes with manual reinstall instructions for installs that cannot reach the
+updater. The existing Ged Release workflow will build the installer and publish the signed stable
+Sparkle feed after the fix lands. Publication is authorized, but remains pending: this session
+cannot write Git metadata, and the connected GitHub app reports read-only repository access.
+Local 0.6.1 desktop/server/web compilation succeeded. DMG packaging failed at SVG conversion in
+`sips`; a ZIP packaging attempt reached the resource monitor but failed because local rustc 1.90
+is below `sysinfo`'s 1.95 minimum. The release workflow installs stable Rust on its own macOS runner.

@@ -450,6 +450,13 @@ rewriting them would make every sync a conflict storm. `scripts/ged/identity.ts`
 packaged build says GedCode everywhere. The cost: `vp run dev` still shows upstream's strings,
 because dev serves unstaged sources.
 
+JavaScript staging applies these rules only to parsed string and template literal text. Minifiers
+can name a binding `T3`; rewriting code such as `export {T3 as si}` breaks module loading, as in
+0.6.0. Literal ranges are replaced in the original source so code, escapes and template expressions
+retain their syntax; module specifiers and quoted import/export bindings are excluded. Template
+rules can inspect following interpolations without rewriting them, preserving version hints such
+as `t3@${version}`. Non-JavaScript text and build configuration use the prose rules directly.
+
 T3's services are cut rather than rebranded. Telemetry has no key and is off; the model manifest,
 CLI release index and release notes point at this repository; pairing links are direct server links
 because there is no hosted web app; the T3 mobile beta prompt is hidden; the desktop never imports

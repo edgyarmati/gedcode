@@ -115,3 +115,7 @@ jobs:
       - name: Test Sparkle updates (release scripts)
         working-directory: scripts
         run: vp test run --config ../vite.config.ts sparkle
+
+      - name: Test staged bundle branding
+        working-directory: scripts
+        run: vp test run --config ../vite.config.ts ged/identity.test.ts

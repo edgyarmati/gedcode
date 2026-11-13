@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeURL from "node:url";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -158,35 +161,83 @@ describe("GedCode identity", () => {
     assert.equal(stage.build.appId, GED_APP_ID);
   });
 
-  it.effect("rewrites staged text bundles but leaves node_modules and binaries alone", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped();
-      yield* fs.makeDirectory(path.join(root, "client/assets"), { recursive: true });
-      yield* fs.makeDirectory(path.join(root, "node_modules/dep"), { recursive: true });
-      yield* fs.writeFileString(path.join(root, "client/index.html"), "<title>T3 Code</title>");
-      yield* fs.writeFileString(path.join(root, "client/assets/app.js"), 'n="T3 Code (Beta)"');
-      yield* fs.writeFileString(path.join(root, "client/assets/plain.js"), "no product name");
-      yield* fs.writeFileString(path.join(root, "client/assets/logo.png"), "T3 Code");
-      yield* fs.writeFileString(path.join(root, "node_modules/dep/index.js"), "T3 Code");
+  it.effect(
+    "rebrands staged text without changing JavaScript syntax, dependencies or binaries",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped();
+        yield* fs.makeDirectory(path.join(root, "client/assets"), { recursive: true });
+        yield* fs.makeDirectory(path.join(root, "node_modules/dep"), { recursive: true });
+        yield* fs.writeFileString(path.join(root, "client/index.html"), "<title>T3 Code</title>");
+        const javascript = [
+          'import {"T3 Code" as imported} from "./T3 Code.mjs";',
+          'export {imported as "T3 Code"};',
+          'export const load=()=>import(`./T3 Code${""}.mjs`);',
+          'export const required=()=>require("./T3 Code.cjs");',
+          'export const resolved=()=>require.resolve(`./T3 Code${""}.cjs`);',
+          'const T3="ArrowRight",t3=2;',
+          "export {T3 as si,t3 as cli};",
+          'export const name="T3 Code (Beta)";',
+          'export const label=`T3 Code: ${T3}; T3 server ${"T3 thread"}; T3 browser`;',
+          'const version="0.6.0";',
+          "export const preview=`t3@${version} is a preview build.`;",
+          "export const matcher=/T3 as t3/;",
+          "// T3 Code: T3 as t3",
+        ].join("\n");
+        for (const extension of ["js", "cjs", "mjs"]) {
+          yield* fs.writeFileString(path.join(root, `client/assets/app.${extension}`), javascript);
+        }
+        yield* fs.writeFileString(
+          path.join(root, "client/assets/T3 Code.mjs"),
+          'const value=7;export {value as "T3 Code"};',
+        );
+        yield* fs.writeFileString(path.join(root, "client/assets/plain.js"), "no product name");
+        yield* fs.writeFileString(path.join(root, "client/assets/logo.png"), "T3 Code");
+        yield* fs.writeFileString(path.join(root, "node_modules/dep/index.js"), "T3 Code");
 
-      const changed = yield* rebrandStagedBundles([root]);
+        const changed = yield* rebrandStagedBundles([root]);
 
-      assert.equal(changed, 2);
-      assert.equal(
-        yield* fs.readFileString(path.join(root, "client/index.html")),
-        "<title>GedCode</title>",
-      );
-      assert.equal(
-        yield* fs.readFileString(path.join(root, "client/assets/app.js")),
-        'n="GedCode"',
-      );
-      assert.equal(yield* fs.readFileString(path.join(root, "client/assets/logo.png")), "T3 Code");
-      assert.equal(
-        yield* fs.readFileString(path.join(root, "node_modules/dep/index.js")),
-        "T3 Code",
-      );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+        assert.equal(changed, 4);
+        assert.equal(
+          yield* fs.readFileString(path.join(root, "client/index.html")),
+          "<title>GedCode</title>",
+        );
+        for (const extension of ["js", "cjs", "mjs"]) {
+          assert.equal(
+            yield* fs.readFileString(path.join(root, `client/assets/app.${extension}`)),
+            javascript
+              .replace('name="T3 Code (Beta)"', 'name="GedCode"')
+              .replace("label=`T3 Code:", "label=`GedCode:")
+              .replace("; T3 server", "; GedCode server")
+              .replace('"T3 thread"', '"GedCode thread"')
+              .replace("preview=`t3@", "preview=`gedcode@")
+              .replace("; T3 browser`", "; GedCode browser`"),
+          );
+        }
+        const module = yield* Effect.promise(
+          () => import(NodeURL.pathToFileURL(path.join(root, "client/assets/app.mjs")).href),
+        );
+        assert.equal(module.si, "ArrowRight");
+        assert.equal(module.cli, 2);
+        assert.equal(module.name, "GedCode");
+        assert.equal(module["T3 Code"], 7);
+        const loaded = yield* Effect.promise(() => module.load());
+        assert.propertyVal(loaded, "T3 Code", 7);
+        assert.equal(module.preview, "gedcode@0.6.0 is a preview build.");
+        assert.equal(
+          module.label,
+          "GedCode: ArrowRight; GedCode server GedCode thread; GedCode browser",
+        );
+        assert.equal(
+          yield* fs.readFileString(path.join(root, "client/assets/logo.png")),
+          "T3 Code",
+        );
+        assert.equal(
+          yield* fs.readFileString(path.join(root, "node_modules/dep/index.js")),
+          "T3 Code",
+        );
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

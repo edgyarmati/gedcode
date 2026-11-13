@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import ts from "typescript-legacy";
 
 /** Rebrand staged bundles rather than editing upstream's user-visible strings.
     Runtime identity (data directories, URL scheme, app name) must also hold in
@@ -68,12 +69,25 @@ const PROSE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/(?<=\\`)t3(?=\\`)/g, GED_CLI_NAME],
 ];
 
+function rebrandPrefix(text: string, end: number): string {
+  for (const [pattern, to] of [...PRODUCT_NAME_REPLACEMENTS, ...PROSE_RULES]) {
+    let delta = 0;
+    const replace = (match: string, offset: number): string => {
+      if (offset + match.length > end) return match;
+      delta += to.length - match.length;
+      return to;
+    };
+    text =
+      typeof pattern === "string"
+        ? text.replaceAll(pattern, replace)
+        : text.replace(pattern, replace);
+    end += delta;
+  }
+  return text.slice(0, end);
+}
+
 export function rebrandText(text: string): string {
-  const named = PRODUCT_NAME_REPLACEMENTS.reduce(
-    (current, [from, to]) => current.replaceAll(from, to),
-    text,
-  );
-  return PROSE_RULES.reduce((current, [pattern, to]) => current.replace(pattern, to), named);
+  return rebrandPrefix(text, text.length);
 }
 
 export function resolveGedProductName(channel: "latest" | "nightly"): string {
@@ -154,6 +168,58 @@ export function applyGedStagePackageIdentity<T extends { readonly build: Json }>
 }
 
 const TEXT_EXTENSIONS = new Set([".js", ".cjs", ".mjs", ".html", ".json", ".webmanifest", ".txt"]);
+const JAVASCRIPT_EXTENSIONS = new Set([".js", ".cjs", ".mjs"]);
+
+function rebrandJavaScript(source: string): string {
+  if (rebrandText(source) === source) return source;
+  const module = ts.createSourceFile(
+    "bundle.js",
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.JS,
+  );
+  const parts: string[] = [];
+  let offset = 0;
+  const visit = (node: ts.Node, parent?: ts.Node, templateEnd?: number): void => {
+    if (ts.isTemplateExpression(node)) templateEnd = node.end;
+    const moduleSyntax =
+      parent &&
+      (ts.isImportDeclaration(parent) ||
+        ts.isExportDeclaration(parent) ||
+        ts.isImportSpecifier(parent) ||
+        ts.isExportSpecifier(parent) ||
+        (ts.isCallExpression(parent) &&
+          (parent.expression.kind === ts.SyntaxKind.ImportKeyword ||
+            (ts.isIdentifier(parent.expression) && parent.expression.text === "require") ||
+            (ts.isPropertyAccessExpression(parent.expression) &&
+              ts.isIdentifier(parent.expression.expression) &&
+              parent.expression.expression.text === "require" &&
+              parent.expression.name.text === "resolve"))));
+    if (moduleSyntax) return;
+    if (
+      ts.isStringLiteralLike(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
+    ) {
+      const start = node.getStart(module);
+      const original = source.slice(start, node.end);
+      // Lookaheads may need the interpolation and following prose, but cannot rewrite them.
+      const contextEnd =
+        ts.isTemplateHead(node) || ts.isTemplateMiddle(node) ? templateEnd : node.end;
+      const rebranded = rebrandPrefix(source.slice(start, contextEnd), node.end - start);
+      if (original !== rebranded) {
+        parts.push(source.slice(offset, start), rebranded);
+        offset = node.end;
+      }
+    }
+    ts.forEachChild(node, (child) => visit(child, node, templateEnd));
+  };
+  visit(module);
+  parts.push(source.slice(offset));
+  return parts.join("");
+}
 
 /**
  * Rewrites the product name in the staged bundles' text files (not their
@@ -173,7 +239,10 @@ export const rebrandStagedBundles = Effect.fn("rebrandStagedBundles")(function* 
       const file = path.join(directory, entry);
       if ((yield* fs.stat(file)).type !== "File") continue;
       const original = yield* fs.readFileString(file);
-      const rebranded = rebrandText(original);
+      // Minified identifiers can be T3 or t3; only rewrite JavaScript literal text.
+      const rebranded = JAVASCRIPT_EXTENSIONS.has(path.extname(entry))
+        ? rebrandJavaScript(original)
+        : rebrandText(original);
       if (rebranded !== original) {
         yield* fs.writeFileString(file, rebranded);
         changed += 1;
