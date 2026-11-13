@@ -177,6 +177,8 @@ describe("GedCode identity", () => {
           'export const load=()=>import(`./T3 Code${""}.mjs`);',
           'export const required=()=>require("./T3 Code.cjs");',
           'export const resolved=()=>require.resolve(`./T3 Code${""}.cjs`);',
+          'export const wrapped=()=>[(require)("./T3 Code.cjs"),(require.resolve)("./T3 Code.cjs")];',
+          'export const computed=()=>(require)["resolve"]("./T3 Code.cjs");',
           'const T3="ArrowRight",t3=2;',
           "export {T3 as si,t3 as cli};",
           'export const name="T3 Code (Beta)";',
@@ -239,5 +241,21 @@ describe("GedCode identity", () => {
           "T3 Code",
         );
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("refuses to rebrand JavaScript it cannot parse", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      // Annex B HTML comments are valid script syntax the parser does not support.
+      const source = 'const name="T3 Code";\n<!-- "T3 Code"\n';
+      yield* fs.writeFileString(path.join(root, "legacy.cjs"), source);
+
+      const error = yield* Effect.flip(rebrandStagedBundles([root]));
+
+      assert.include(String(error), "legacy.cjs");
+      assert.equal(yield* fs.readFileString(path.join(root, "legacy.cjs")), source);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

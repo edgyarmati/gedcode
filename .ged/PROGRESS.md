@@ -517,3 +517,13 @@ cannot write Git metadata, and the connected GitHub app reports read-only reposi
 Local 0.6.1 desktop/server/web compilation succeeded. DMG packaging failed at SVG conversion in
 `sips`; a ZIP packaging attempt reached the resource monitor but failed because local rustc 1.90
 is below `sysinfo`'s 1.95 minimum. The release workflow installs stable Rust on its own macOS runner.
+
+## 2026-11-14 — Independent review of the 0.6.1 repair
+
+Codex (gpt-6.1-sol) reviewed 272246c52 and failed two criteria with constructed fixtures:
+parenthesized/computed `require` specifiers were rebranded, and a file the TypeScript parser
+could not read (Annex B `<!--` comments) was rewritten from its recovered tree. Module calls now
+unwrap parentheses and computed `resolve`, and unparsable JavaScript fails staging. Both cases
+were added to the identity tests (failing first). Staging the real local server and desktop
+output rebranded 56 files with no parse failures; every changed file passes `node --check` and
+the `{T3 as …}` export in the utils chunk is preserved.

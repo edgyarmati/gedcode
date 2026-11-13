@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import ts from "typescript-legacy";
 
 /** Rebrand staged bundles rather than editing upstream's user-visible strings.
@@ -170,6 +171,38 @@ export function applyGedStagePackageIdentity<T extends { readonly build: Json }>
 const TEXT_EXTENSIONS = new Set([".js", ".cjs", ".mjs", ".html", ".json", ".webmanifest", ".txt"]);
 const JAVASCRIPT_EXTENSIONS = new Set([".js", ".cjs", ".mjs"]);
 
+const unwrap = (node: ts.Expression): ts.Expression =>
+  ts.isParenthesizedExpression(node) ? unwrap(node.expression) : node;
+
+const isRequire = (node: ts.Expression): boolean => {
+  const callee = unwrap(node);
+  return ts.isIdentifier(callee) && callee.text === "require";
+};
+
+/** `import(...)`, `require(...)` and `require.resolve(...)`, however parenthesized. */
+const isModuleCall = (node: ts.CallExpression): boolean => {
+  const callee = unwrap(node.expression);
+  if (callee.kind === ts.SyntaxKind.ImportKeyword || isRequire(callee)) return true;
+  if (ts.isPropertyAccessExpression(callee)) {
+    return isRequire(callee.expression) && callee.name.text === "resolve";
+  }
+  return (
+    ts.isElementAccessExpression(callee) &&
+    isRequire(callee.expression) &&
+    ts.isStringLiteralLike(callee.argumentExpression) &&
+    callee.argumentExpression.text === "resolve"
+  );
+};
+
+export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParseError>()(
+  "StagedBundleParseError",
+  { file: Schema.String, reason: Schema.String },
+) {
+  override get message(): string {
+    return `Cannot rebrand ${this.file}: ${this.reason}`;
+  }
+}
+
 function rebrandJavaScript(source: string): string {
   if (rebrandText(source) === source) return source;
   const module = ts.createSourceFile(
@@ -179,6 +212,14 @@ function rebrandJavaScript(source: string): string {
     false,
     ts.ScriptKind.JS,
   );
+  // Not in the public typings; a recovered tree would let us rewrite comments as literals.
+  const { parseDiagnostics } = module as unknown as {
+    readonly parseDiagnostics: ReadonlyArray<ts.Diagnostic>;
+  };
+  const [diagnostic] = parseDiagnostics;
+  if (diagnostic !== undefined) {
+    throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
+  }
   const parts: string[] = [];
   let offset = 0;
   const visit = (node: ts.Node, parent?: ts.Node, templateEnd?: number): void => {
@@ -189,13 +230,7 @@ function rebrandJavaScript(source: string): string {
         ts.isExportDeclaration(parent) ||
         ts.isImportSpecifier(parent) ||
         ts.isExportSpecifier(parent) ||
-        (ts.isCallExpression(parent) &&
-          (parent.expression.kind === ts.SyntaxKind.ImportKeyword ||
-            (ts.isIdentifier(parent.expression) && parent.expression.text === "require") ||
-            (ts.isPropertyAccessExpression(parent.expression) &&
-              ts.isIdentifier(parent.expression.expression) &&
-              parent.expression.expression.text === "require" &&
-              parent.expression.name.text === "resolve"))));
+        (ts.isCallExpression(parent) && isModuleCall(parent)));
     if (moduleSyntax) return;
     if (
       ts.isStringLiteralLike(node) ||
@@ -241,7 +276,14 @@ export const rebrandStagedBundles = Effect.fn("rebrandStagedBundles")(function* 
       const original = yield* fs.readFileString(file);
       // Minified identifiers can be T3 or t3; only rewrite JavaScript literal text.
       const rebranded = JAVASCRIPT_EXTENSIONS.has(path.extname(entry))
-        ? rebrandJavaScript(original)
+        ? yield* Effect.try({
+            try: () => rebrandJavaScript(original),
+            catch: (cause) =>
+              new StagedBundleParseError({
+                file,
+                reason: cause instanceof Error ? cause.message : String(cause),
+              }),
+          })
         : rebrandText(original);
       if (rebranded !== original) {
         yield* fs.writeFileString(file, rebranded);
