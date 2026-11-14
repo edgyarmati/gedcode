@@ -110,8 +110,16 @@ jobs:
       - name: Ensure Electron runtime is installed
         run: vp run --filter @t3tools/desktop ensure:electron
 
+      # Mirrors upstream's ci.yml: --parallel so one failing package does not skip its dependents,
+      # and ASCII output because the runner's trace writer can crash on surrogate pairs.
       - name: Test
-        run: vp run --concurrency-limit 2 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test
+        run: |
+          set -o pipefail
+          vp run --parallel --concurrency-limit 2 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test 2>&1 | python3 -u -c '
+          import sys
+          for line in sys.stdin:
+              sys.stdout.write(line.encode("ascii", "backslashreplace").decode("ascii"))
+          '
 
   test_server:
     name: Test Server ${{ matrix.shard }}
