@@ -539,3 +539,9 @@ A third review of 040e9224d..aa87bee9a failed only on comma-sequenced callees: `
 and `(0, require.resolve)(…)` had their specifiers rebranded. Callee unwrapping now follows the
 right operand of comma expressions; the test fixture covers both forms (failing first), and real
 staging is unchanged (56 files, all passing `node --check`).
+
+A fourth review of 040e9224d..df639808c failed two constructed cases: prose inside a module-call
+callee (`(log("T3 Code"), require)(…)`) was skipped with the specifier, and an invalid regex
+(`/(/`) was rewritten because the parser does not check regex bodies. Only the specifier argument
+is now excluded, and every regex literal is compiled, so such a file fails staging. Both cases
+failed first; real staging still rebrands 56 files, all passing `node --check`.

@@ -197,6 +197,12 @@ const isModuleCall = (node: ts.CallExpression): boolean => {
   return ts.isStringLiteralLike(key) && key.text === "resolve";
 };
 
+/** Throws on a body the parser accepts but V8 rejects when the module loads, such as `/(/`. */
+const compileRegularExpression = (literal: string): RegExp => {
+  const flagsStart = literal.lastIndexOf("/");
+  return new RegExp(literal.slice(1, flagsStart), literal.slice(flagsStart + 1));
+};
+
 export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParseError>()(
   "StagedBundleParseError",
   { file: Schema.String, reason: Schema.String },
@@ -222,7 +228,7 @@ function rebrandJavaScript(source: string): string {
   if (diagnostic !== undefined) {
     throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
   }
-  if (rebrandText(source) === source) return source;
+  const brandable = rebrandText(source) !== source;
   const parts: string[] = [];
   let offset = 0;
   const visit = (node: ts.Node, parent?: ts.Node, templateEnd?: number): void => {
@@ -233,13 +239,15 @@ function rebrandJavaScript(source: string): string {
         ts.isExportDeclaration(parent) ||
         ts.isImportSpecifier(parent) ||
         ts.isExportSpecifier(parent) ||
-        (ts.isCallExpression(parent) && isModuleCall(parent)));
+        (ts.isCallExpression(parent) && node === parent.arguments[0] && isModuleCall(parent)));
     if (moduleSyntax) return;
+    if (ts.isRegularExpressionLiteral(node)) compileRegularExpression(node.text);
     if (
-      ts.isStringLiteralLike(node) ||
-      ts.isTemplateHead(node) ||
-      ts.isTemplateMiddle(node) ||
-      ts.isTemplateTail(node)
+      brandable &&
+      (ts.isStringLiteralLike(node) ||
+        ts.isTemplateHead(node) ||
+        ts.isTemplateMiddle(node) ||
+        ts.isTemplateTail(node))
     ) {
       const start = node.getStart(module);
       const original = source.slice(start, node.end);
@@ -255,6 +263,7 @@ function rebrandJavaScript(source: string): string {
     ts.forEachChild(node, (child) => visit(child, node, templateEnd));
   };
   visit(module);
+  if (parts.length === 0) return source;
   parts.push(source.slice(offset));
   return parts.join("");
 }

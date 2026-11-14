@@ -180,6 +180,7 @@ describe("GedCode identity", () => {
           'export const wrapped=()=>[(require)("./T3 Code.cjs"),(require.resolve)("./T3 Code.cjs")];',
           'export const computed=()=>[(require)["resolve"]("./T3 Code.cjs"),require[("resolve")]("./T3 Code.cjs")];',
           'export const sequenced=()=>[(0,require)("./T3 Code.cjs"),(0,require.resolve)("./T3 Code.cjs"),(0,(0,require))["resolve"]("./T3 Code.cjs")];',
+          'export const announced=()=>(globalThis.shown="T3 Code",require)("node:path");',
           'const T3="ArrowRight",t3=2;',
           "export {T3 as si,t3 as cli};",
           'export const name="T3 Code (Beta)";',
@@ -219,6 +220,7 @@ describe("GedCode identity", () => {
             yield* fs.readFileString(path.join(root, `client/assets/app.${extension}`)),
             javascript
               .replace('name="T3 Code (Beta)"', 'name="GedCode"')
+              .replace('shown="T3 Code"', 'shown="GedCode"')
               .replace("label=`T3 Code:", "label=`GedCode:")
               .replace("; T3 server", "; GedCode server")
               .replace('"T3 thread"', '"GedCode thread"')
@@ -260,7 +262,11 @@ describe("GedCode identity", () => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       // Annex B HTML comments are valid script syntax the parser does not support.
-      for (const source of ['const name="T3 Code";\n<!-- "T3 Code"\n', "const =;"]) {
+      for (const source of [
+        'const name="T3 Code";\n<!-- "T3 Code"\n',
+        "const =;",
+        'const name="T3 Code";const pattern=/(/;',
+      ]) {
         const root = yield* fs.makeTempDirectoryScoped();
         yield* fs.writeFileString(path.join(root, "legacy.cjs"), source);
 
