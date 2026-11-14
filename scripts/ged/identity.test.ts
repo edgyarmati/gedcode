@@ -182,6 +182,8 @@ describe("GedCode identity", () => {
           'export const sequenced=()=>[(0,require)("./T3 Code.cjs"),(0,require.resolve)("./T3 Code.cjs"),(0,(0,require))["resolve"]("./T3 Code.cjs")];',
           'export const announced=()=>(globalThis.shown="T3 Code",require)("node:path");',
           'export const keyed=()=>[require["res"+"olve"]("./T3 Code.cjs"),import.meta.resolve("./T3 Code.mjs")];',
+          'export const nested=()=>[require.main.require("./T3 Code.cjs"),require.resolve.paths("T3 Code"),module.require("./T3 Code.cjs"),module["require"]("./T3 Code.cjs")];',
+          'export const created=()=>[createRequire(import.meta.url)("./T3 Code.cjs"),NodeModule.createRequire(import.meta.url).resolve("./T3 Code.cjs")];',
           'const T3="ArrowRight",t3=2;',
           "export {T3 as si,t3 as cli};",
           'export const name="T3 Code (Beta)";',
@@ -286,8 +288,21 @@ describe("GedCode identity", () => {
         assert.deepEqual(yield* fs.readDirectory(root), [name]);
         assert.equal(yield* fs.readFileString(path.join(root, name)), source);
       }
+      // A lossy decode would turn the invalid byte into U+FFFD and write that back.
+      const invalid = Uint8Array.of(...new TextEncoder().encode('const name="T3 Code";//'), 0xff);
+      for (const name of ["app.js", "notes.txt"]) {
+        const root = yield* fs.makeTempDirectoryScoped();
+        yield* fs.writeFile(path.join(root, name), invalid);
+
+        const error = yield* Effect.flip(rebrandStagedBundles([root]));
+
+        assert.include(String(error), name);
+        assert.deepEqual([...(yield* fs.readFile(path.join(root, name)))], [...invalid]);
+      }
+      // Files without the product name are not judged.
       const root = yield* fs.makeTempDirectoryScoped();
       yield* fs.writeFileString(path.join(root, "vendor.js"), "const =;");
+      yield* fs.writeFile(path.join(root, "data.txt"), Uint8Array.of(0x61, 0xff));
       assert.equal(yield* rebrandStagedBundles([root]), 0);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );

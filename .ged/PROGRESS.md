@@ -555,3 +555,13 @@ neither parsed nor judged, which also stops vendored sloppy-mode octals from fai
 (raised by a separate Opus review). The review criterion moved from "reject any invalid
 JavaScript" to "never write a file Node would refuse to load", the guarantee that matters for
 0.6.0's failure. Real staging output is byte-identical to a296263f1 (56 files) in about 6 s.
+
+A sixth review of 040e9224d..d5aa782a3 found two real gaps: deeper loader chains
+(`require.main.require`, `require.resolve.paths`, `module.require`) still had specifiers rebranded,
+and a matched file with invalid UTF-8 was decoded lossily and written back with U+FFFD. Module-call
+detection now walks member chains to their root and also covers anything named `require` and
+`createRequire(...)` results; aliased loaders are documented as out of scope. A matched file that is
+not valid UTF-8 now fails staging. It also flagged that the round-5 criteria overstated two things,
+"no parse errors" (sloppy octals are tolerated by design) and "exactly as before" (a BOM is now
+kept), so round 7's criteria state the intended invariants. Tests failed first; real staging is
+byte-identical to d5aa782a3 (56 files).

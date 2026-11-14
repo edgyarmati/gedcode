@@ -184,24 +184,32 @@ const unwrap = (node: ts.Expression): ts.Expression => {
   return node;
 };
 
-const isNamed = (node: ts.Expression, name: string): boolean => {
+/** The name a callee is reached by: `require`, `x.require` and `x["require"]` all name `require`. */
+const nameOf = (node: ts.Expression): string | undefined => {
   const target = unwrap(node);
-  return ts.isIdentifier(target) && target.text === name;
+  if (ts.isIdentifier(target)) return target.text;
+  if (ts.isPropertyAccessExpression(target)) return target.name.text;
+  if (ts.isElementAccessExpression(target)) {
+    const key = unwrap(target.argumentExpression);
+    return ts.isStringLiteralLike(key) ? key.text : undefined;
+  }
+  return undefined;
 };
 
 /**
- * Calls whose first argument names a module: `import()`, and anything called through `require` or
- * `import.meta`. Member keys are not evaluated, so `require[key](...)` counts whatever `key` is.
+ * Whether calling `node` loads or resolves a module: `import`, anything named `require`, a
+ * `createRequire(...)` result, or any member of those or of `import.meta`. Computed keys are not
+ * evaluated. A loader stored under another name, such as `const load = require`, is not followed.
  */
-const isModuleCall = (node: ts.CallExpression): boolean => {
-  const callee = unwrap(node.expression);
-  if (callee.kind === ts.SyntaxKind.ImportKeyword || isNamed(callee, "require")) return true;
-  if (!ts.isPropertyAccessExpression(callee) && !ts.isElementAccessExpression(callee)) return false;
-  const target = unwrap(callee.expression);
-  return (
-    isNamed(target, "require") ||
-    (ts.isMetaProperty(target) && target.keywordToken === ts.SyntaxKind.ImportKeyword)
-  );
+const loadsModules = (node: ts.Expression): boolean => {
+  const target = unwrap(node);
+  if (target.kind === ts.SyntaxKind.ImportKeyword || nameOf(target) === "require") return true;
+  if (ts.isMetaProperty(target)) return target.keywordToken === ts.SyntaxKind.ImportKeyword;
+  if (ts.isCallExpression(target)) return nameOf(target.expression) === "createRequire";
+  if (ts.isPropertyAccessExpression(target) || ts.isElementAccessExpression(target)) {
+    return loadsModules(target.expression);
+  }
+  return false;
 };
 
 // Sloppy-mode octals are legal in scripts and leave token boundaries intact; Node judges the output.
@@ -217,7 +225,6 @@ export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParse
 }
 
 function rebrandJavaScript(source: string): string {
-  if (rebrandText(source) === source) return source;
   const module = ts.createSourceFile(
     "bundle.js",
     source,
@@ -243,7 +250,9 @@ function rebrandJavaScript(source: string): string {
         ts.isExportDeclaration(parent) ||
         ts.isImportSpecifier(parent) ||
         ts.isExportSpecifier(parent) ||
-        (ts.isCallExpression(parent) && node === parent.arguments[0] && isModuleCall(parent)));
+        (ts.isCallExpression(parent) &&
+          node === parent.arguments[0] &&
+          loadsModules(parent.expression)));
     if (moduleSyntax) return;
     if (
       ts.isStringLiteralLike(node) ||
@@ -269,6 +278,15 @@ function rebrandJavaScript(source: string): string {
   parts.push(source.slice(offset));
   return parts.join("");
 }
+
+const isUtf8 = (bytes: Uint8Array): boolean => {
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** Replaces `file` only if Node's own parser accepts the rewrite, which TypeScript's cannot promise. */
 const replaceCheckedJavaScript = Effect.fn("replaceCheckedJavaScript")(function* (
@@ -315,10 +333,14 @@ export const rebrandStagedBundles = Effect.fn("rebrandStagedBundles")(function* 
       if (!TEXT_EXTENSIONS.has(path.extname(entry))) continue;
       const file = path.join(directory, entry);
       if ((yield* fs.stat(file)).type !== "File") continue;
+      const bytes = yield* fs.readFile(file);
       // Keep a byte-order mark; readFileString would drop it.
-      const original = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
-        yield* fs.readFile(file),
-      );
+      const original = new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
+      // Files without the product name are left alone, whatever they contain.
+      if (rebrandText(original) === original) continue;
+      if (!isUtf8(bytes)) {
+        return yield* new StagedBundleParseError({ file, reason: "not valid UTF-8" });
+      }
       // Minified identifiers can be T3 or t3; only rewrite JavaScript literal text.
       const rebranded = JAVASCRIPT_EXTENSIONS.has(path.extname(entry))
         ? yield* Effect.try({
