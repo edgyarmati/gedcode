@@ -260,9 +260,13 @@ function rebrandLiterals(source: string, asModule: boolean): string {
   const parts: string[] = [];
   let offset = 0;
   // An explicit stack in source order: minified `a+b+...` chains nest thousands of nodes deep.
-  const stack: Array<{ node: ts.Node; parent?: ts.Node; templateEnd: number | undefined }> = [
-    { node: module, templateEnd: undefined },
-  ];
+  // Specifier subtrees are still walked, so the `<!--` check below sees every node.
+  const stack: Array<{
+    node: ts.Node;
+    parent?: ts.Node;
+    templateEnd: number | undefined;
+    inSpecifier: boolean;
+  }> = [{ node: module, templateEnd: undefined, inSpecifier: false }];
   for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
     const { node, parent } = next;
     const templateEnd = ts.isTemplateExpression(node) ? node.end : next.templateEnd;
@@ -277,21 +281,22 @@ function rebrandLiterals(source: string, asModule: boolean): string {
     ) {
       throw new Error("`<!--` would be a comment in a script but parses as code");
     }
-    const moduleSyntax =
-      parent &&
-      (ts.isImportDeclaration(parent) ||
-        ts.isExportDeclaration(parent) ||
-        ts.isImportSpecifier(parent) ||
-        ts.isExportSpecifier(parent) ||
-        ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) &&
-          node === parent.arguments?.[0] &&
-          loadsModules(parent.expression)));
-    if (moduleSyntax) continue;
+    const inSpecifier =
+      next.inSpecifier ||
+      (parent !== undefined &&
+        (ts.isImportDeclaration(parent) ||
+          ts.isExportDeclaration(parent) ||
+          ts.isImportSpecifier(parent) ||
+          ts.isExportSpecifier(parent) ||
+          ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) &&
+            node === parent.arguments?.[0] &&
+            loadsModules(parent.expression))));
     if (
-      ts.isStringLiteralLike(node) ||
-      ts.isTemplateHead(node) ||
-      ts.isTemplateMiddle(node) ||
-      ts.isTemplateTail(node)
+      !inSpecifier &&
+      (ts.isStringLiteralLike(node) ||
+        ts.isTemplateHead(node) ||
+        ts.isTemplateMiddle(node) ||
+        ts.isTemplateTail(node))
     ) {
       const start = node.getStart(module);
       const original = source.slice(start, node.end);
@@ -307,7 +312,7 @@ function rebrandLiterals(source: string, asModule: boolean): string {
     const children: ts.Node[] = [];
     ts.forEachChild(node, (child) => void children.push(child));
     for (const child of children.toReversed())
-      stack.push({ node: child, parent: node, templateEnd });
+      stack.push({ node: child, parent: node, templateEnd, inSpecifier });
   }
   if (parts.length === 0) return source;
   parts.push(source.slice(offset));

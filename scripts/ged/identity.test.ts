@@ -297,6 +297,11 @@ describe("GedCode identity", () => {
         // Scripts end the line at `<!--`; TypeScript reads `a < !--b` and a template over the code.
         ["comment.cjs", 'var a=1,b=2;a<!--b,`\nvar T3=1;exports.n="T3 Code";\n<!--`;\n'],
         ["shifted.cjs", 'var a=1,b=2;a<<!--b;"T3 Code"\n'],
+        // Loader arguments are never rewritten, but the comment still moves the code after it.
+        [
+          "loader.cjs",
+          'var a="node:path",b=2,T3="k",o={k:1};require(a<!--b,`\n,exports.n=T3 in o);\n<!--`);',
+        ],
         ["app.mjs", 'export const name="T3 Code";export {missing};'],
         // Node's own check of a `.js` file skips any it detects as a module.
         ["missing.js", 'export const name="T3 Code";export {missing};'],

@@ -597,3 +597,8 @@ unchecked and `export {missing}` staged. The rewrite is now checked on stdin wit
 the scratch-directory, chmod and rename machinery. The AST walk is iterative, since a 1,500-term
 minified `+` chain overflowed the recursive one. Tests failed first; real staging is byte-identical
 (56 files).
+
+Round 11: Codex passed; Opus found the `<!--` refusal blind inside loader arguments, because the walk
+skipped specifier subtrees outright, so `require(a<!--b,`...`)` let a binding be rebranded. The walk
+now descends into every subtree and only marks specifier ones as not rewritable. Test failed first;
+real staging is byte-identical (56 files).
