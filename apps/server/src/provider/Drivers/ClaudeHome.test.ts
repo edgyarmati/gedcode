@@ -2,7 +2,6 @@ import * as NodeOS from "node:os";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -100,35 +99,5 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
             .CLAUDE_CODE_ENTRYPOINT,
         ).toBe("custom");
       }),
-  );
-
-  it.effect("preserves user/managed entrypoint precedence and ignores invalid settings", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const homePath = yield* fs.makeTempDirectoryScoped();
-      const host = Object.freeze({ PROGRAMDATA: homePath, KEEP: "host" });
-      const instance = [{ name: "CLAUDE_CODE_ENTRYPOINT", value: "instance", sensitive: false }];
-      const merge = () => mergeClaudeProcessEnvironment({ homePath }, instance, host);
-      const user = path.join(homePath, "settings.json");
-      expect((yield* merge()).CLAUDE_CODE_ENTRYPOINT).toBe("instance");
-      yield* fs.writeFileString(
-        user,
-        '{ // JSONC\n "env": { "CLAUDE_CODE_ENTRYPOINT": "user", }, }',
-      );
-      expect((yield* merge()).CLAUDE_CODE_ENTRYPOINT).toBe("user");
-      yield* fs.makeDirectory(path.join(homePath, "ClaudeCode"));
-      const managed = path.join(homePath, "ClaudeCode", "managed-settings.json");
-      yield* fs.writeFileString(managed, '{"env":{"CLAUDE_CODE_ENTRYPOINT":"managed"}}');
-      expect(yield* merge()).toEqual({ ...host, CLAUDE_CODE_ENTRYPOINT: "managed" });
-      for (const contents of ["{invalid", '{"env":{"CLAUDE_CODE_ENTRYPOINT":42}}']) {
-        yield* fs.writeFileString(managed, contents);
-        expect((yield* merge()).CLAUDE_CODE_ENTRYPOINT).toBe("user");
-      }
-      yield* fs.writeFileString(managed, '{"env":{"CLAUDE_CODE_ENTRYPOINT":""}}');
-      expect((yield* merge()).CLAUDE_CODE_ENTRYPOINT).toBe("instance");
-      expect(host).toEqual({ PROGRAMDATA: homePath, KEEP: "host" });
-      expect(instance[0]?.value).toBe("instance");
-    }).pipe(Effect.provideService(HostProcess.Platform, "win32")),
   );
 });

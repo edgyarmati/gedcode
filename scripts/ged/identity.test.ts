@@ -351,8 +351,6 @@ describe("GedCode identity", () => {
 const UNREACHABLE_T3_INSTALLER_GUIDANCE = [
   // Only a hosted (app.t3.codes) deployment renders it; GedCode serves no hosted web app.
   "apps/web/src/components/InstallT3Commands.tsx",
-  // Runs inside a runtime downloaded from a CLI archive, and GedCode publishes none.
-  "apps/server/src/cloud/servicePreflight.ts",
 ];
 
 describe("GedCode installer guidance", () => {

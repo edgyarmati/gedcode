@@ -373,7 +373,7 @@ Rewriting `runs-on:` would mean editing `.github/workflows/ci.yml` in 37 places 
 workflow files, all of them hot upstream files, for a conflict on every sync. Instead:
 
 - `.github/workflows/ged-ci.yml` is ours and new — format, lint, `knip:check`, repo-wide typecheck,
-  and the Ged test suites, on `ubuntu-latest`. The repository is public, so GitHub-hosted minutes
+  and upstream's own test suites (sharded like upstream's), on `ubuntu-latest`. The repository is public, so GitHub-hosted minutes
   are free. Nothing upstream is modified, so nothing here can conflict.
 - Upstream's workflows are disabled through **repository settings**, not file edits
   (`gh workflow disable`). Disabled: CI, Windows Tests, Deploy T3 Connect relay, both Desktop macOS
@@ -792,16 +792,15 @@ being treated as custom. A frozen copy of the 0.6.1 gate in the server's Ged fix
 
 GedCode publishes no install script and no standalone CLI archives, so nothing may send a user to
 T3's installer (`t3.codes/install`), which installs T3 Code. `gedcode install` points at Settings in
-the desktop app, and the SSH runner's download failure only names the URL it tried. A test in
-`scripts/ged/identity.test.ts` fails when any shipped source names the installer. Two files are
-allowed because GedCode never shows them: the hosted-only setup steps and the service preflight. The
-preflight runs only inside a downloaded CLI archive. If GedCode ever publishes archives and an
-installer, point all of them at it.
+the desktop app, the service preflight points at GedCode's releases page and Settings, and the SSH
+runner's download failure only names the URL it tried. A test in `scripts/ged/identity.test.ts`
+fails when any shipped source names the installer. Only the hosted-only setup steps are allowed,
+because GedCode serves no hosted web app. If GedCode ever publishes archives and an installer, point
+all of them at it.
 
-check:changed on a default Mac fails five upstream tests for environmental reasons: the `/var` →
-`/private/var` temp-directory symlink (AgentSessionScanner, ManagedProjectFolders) and the
-case-insensitive filesystem (ClaudeSkills `PSTACK`, DesktopLinuxUrlHandler icon spellings). Ged CI
-does not run them. To check them locally, point `TMPDIR` at a directory on a case-sensitive APFS
-image with no symlink in its path; all five pass there. Two `packages/ssh` tunnel tests also fail
-only on a Mac. The gzip test expects GNU tar, but bsdtar unpacks gzip without `gzip`. The concurrent-launch
-test passes but takes longer than the 5-second test timeout on a Mac.
+Ged CI runs upstream's suites on Linux, and that run is the authority. On a Mac, some upstream tests
+fail for reasons of the host rather than the code: the `/var` → `/private/var` temp-directory
+symlink (AgentSessionScanner, ManagedProjectFolders, pinnedRuntime), the case-insensitive filesystem
+(ClaudeSkills `PSTACK`, DesktopLinuxUrlHandler icon spellings), bsdtar and the slower concurrent
+launch in `packages/ssh`, macOS `sh`, and editors installed on the machine (externalLauncher).
+Pointing `TMPDIR` at a case-sensitive APFS image with no symlink in its path clears the first two.

@@ -3092,7 +3092,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         cyberAccess: { defaultProgram: "daybreakBlue" },
       });
       assert.include(
-        params.additionalContext?.t3_code_orchestration_01?.value ?? "",
+        Object.entries(params.additionalContext ?? {})
+          .filter(([key]) => key.startsWith("t3_code_orchestration_"))
+          .map(([, entry]) => entry.value)
+          .join("\n"),
         "delegate_task",
       );
       const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });

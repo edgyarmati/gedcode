@@ -81,6 +81,8 @@ jobs:
       - name: Typecheck
         run: vp run -r --concurrency-limit 2 typecheck
 
+  # Upstream's own suites, as upstream's ci.yml splits them. GedCode edits identity in upstream
+  # source, and these are what notice when an upstream assertion still expects T3's.
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -101,21 +103,73 @@ jobs:
           cache: true
           run-install: true
 
-      # The Ged layer lives in apps/server; these are the suites that cover it
-      # plus the upstream MCP surfaces it registers into.
-      - name: Test the Ged layer
+      # The desktop tests compile the browser secret helper.
+      - name: Install browser secret helper build libraries
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Test
+        run: vp run --concurrency-limit 2 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test
+
+  test_server:
+    name: Test Server ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Install Chromium
+        run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+
+      - name: Test
         working-directory: apps/server
-        run: vp test run src/ged src/mcp/toolkits/memory src/mcp/toolkits/core.test.ts src/mcp/McpHttpServer.test.ts
+        run: vp test run --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
-      # Sparkle is how macOS builds update themselves; nothing upstream covers it.
-      - name: Test Sparkle updates (desktop)
-        working-directory: apps/desktop
-        run: vp test run src/electron/ElectronSparkleUpdater.test.ts src/updates/sparkleDesktopUpdates.test.ts
+  test_web:
+    name: Test Web ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
 
-      - name: Test Sparkle updates (release scripts)
-        working-directory: scripts
-        run: vp test run --config ../vite.config.ts sparkle
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
 
-      - name: Test staged bundle branding
-        working-directory: scripts
-        run: vp test run --config ../vite.config.ts ged/identity.test.ts
+      - name: Install Chromium
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+
+      - name: Test
+        run: vp run --filter @t3tools/web test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
