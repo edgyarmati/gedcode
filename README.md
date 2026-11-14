@@ -56,6 +56,7 @@ Using GedCode:
 - [Remote access from another machine or your phone's browser](./docs/ged/user/remote-access.md)
 - [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/ged/user/outside-agents.md)
 - [Source control integrations](./docs/ged/user/source-control.md)
+- [Managed policy for administrators](./docs/ged/user/managed-policy.md)
 
 GedCode's own:
 

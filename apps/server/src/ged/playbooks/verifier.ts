@@ -39,7 +39,7 @@ verdict; the lead sends them back for another implementer round.
 
 Call \`ged_verdict_write\` with the criteria as you ruled on them, your own \`driverKind\` and model,
 and the implementer's. Claude's driver kind is \`claudeAgent\`; others include \`codex\`, \`cursor\`,
-\`grok\`, \`opencode\`, \`pi\`, \`muse\` and \`acpRegistry\`. Your ruling joins any other verifier's
+\`grok\`, \`kiro\`, \`opencode\`, \`pi\`, \`muse\` and \`acpRegistry\`. Your ruling joins any other verifier's
 on the same commit. Cross-vendor review is preferred; fresh same-provider review is accepted with
 an explicit warning even if another vendor is installed. Include the lead's reviewer selection or
 operational fallback reason in \`selectionReason\` (at most 500 characters). GedCode derives

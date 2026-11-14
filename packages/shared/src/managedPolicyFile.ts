@@ -36,13 +36,13 @@ export class ManagedPolicyFileError extends Schema.TaggedError<ManagedPolicyFile
 export function managedPolicyPath(platform: NodeJS.Platform): string {
   switch (platform) {
     case "darwin":
-      return "/Library/Application Support/T3Code/policy.json";
+      return "/Library/Application Support/GedCode/policy.json";
     case "win32":
       // Not ProgramData, where a user can create the folder first and own it; and not
       // %ProgramFiles%, which a user can point somewhere they write.
-      return "C:\\Program Files\\T3Code\\policy.json";
+      return "C:\\Program Files\\GedCode\\policy.json";
     default:
-      return "/etc/t3code/policy.json";
+      return "/etc/gedcode/policy.json";
   }
 }
 
@@ -94,10 +94,11 @@ export const readManagedPolicyFile = Effect.fn("readManagedPolicyFile")(function
   return yield* decodeDocument(path, raw);
 });
 
+/** The preference domain a configuration profile installs the policy for on macOS. */
+export const MACOS_MANAGED_PREFERENCES_DOMAIN = "com.gedcode.app";
 /** Where a configuration profile's managed preferences land on macOS. */
-export const MACOS_MANAGED_PREFERENCES_PATH =
-  "/Library/Managed Preferences/com.t3tools.t3code.plist";
-const WINDOWS_POLICY_SUBKEY = "SOFTWARE\\Policies\\T3Tools\\T3Code";
+export const MACOS_MANAGED_PREFERENCES_PATH = `/Library/Managed Preferences/${MACOS_MANAGED_PREFERENCES_DOMAIN}.plist`;
+const WINDOWS_POLICY_SUBKEY = "SOFTWARE\\Policies\\GedCode\\GedCode";
 /**
  * The registry key Group Policy and Intune write to on Windows. It holds either the Group Policy
  * template's values, one per control, or a `Policy` string with the whole policy as JSON.

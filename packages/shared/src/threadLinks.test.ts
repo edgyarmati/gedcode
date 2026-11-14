@@ -206,8 +206,10 @@ describe("hosted thread links", () => {
   it("escapes every id character a sentence or path could claim, and reads it back", () => {
     const thread = ref("env.1", "thread:delegated/mcp%3A1.");
     const link = hostedThreadLink(thread);
-    expect(link).toBe("https://app.t3.codes/threads/env%2E1/thread%3Adelegated%2Fmcp%253A1%2E");
+    expect(link).toBe("gedcode://threads/env%2E1/thread%3Adelegated%2Fmcp%253A1%2E");
     expect(parseThreadLinkHref(link)).toEqual(thread);
+    // GedCode has no hosted app, so T3's never becomes a link's destination.
+    expect(hostedThreadLink(thread, "https://app.t3.codes/")).toBe(link);
     expect(hostedThreadLink(thread, "https://preview.t3.codes/")).toMatch(
       /^https:\/\/preview\.t3\.codes\/threads\//,
     );
@@ -226,9 +228,9 @@ describe("hosted thread links", () => {
 
   it("writes a copied link a reader can follow, labeled when it has a title", () => {
     expect(formatHostedThreadLink(ref("e", "t1"), "Fix [ci]")).toBe(
-      "[Fix ci](https://app.t3.codes/threads/e/t1)",
+      "[Fix ci](gedcode://threads/e/t1)",
     );
-    expect(formatHostedThreadLink(ref("e", "t1"), " ")).toBe("https://app.t3.codes/threads/e/t1");
+    expect(formatHostedThreadLink(ref("e", "t1"), " ")).toBe("gedcode://threads/e/t1");
   });
 
   it("titles hosted links in every Markdown form and writes them as v2 links", () => {
@@ -260,6 +262,26 @@ describe("hosted thread links", () => {
     expect(threadLinkRefs("Open https://app.t3.codes/threads/there/t%3A1", local)).toEqual([
       ref("there", "t:1"),
     ]);
+    expect(
+      relabelThreadLinks(
+        [
+          "See gedcode://threads/there/t1.",
+          "[old](gedcode://threads/there/t1)",
+          "<gedcode://threads/there/t1>",
+          "`gedcode://threads/there/t1`",
+        ].join("\n"),
+        local,
+        title,
+      ),
+    ).toBe(
+      [
+        "See [There](t3-thread://v2/there/t1).",
+        "[There](t3-thread://v2/there/t1)",
+        "[There](t3-thread://v2/there/t1)",
+        "`gedcode://threads/there/t1`",
+      ].join("\n"),
+    );
+    expect(parseThreadLinkHref("gedcode://threads/there/t1/extra")).toBeNull();
   });
 
   it("leaves a hosted link that is part of another link as written", () => {

@@ -164,6 +164,11 @@ export function withoutPromptLinkParams(search: string): string {
   return rest ? `?${rest}` : "";
 }
 
+// GedCode has no hosted app, so a link into T3's opens GedCode itself through its own scheme.
+export function opensInT3HostedApp(origin: string): boolean {
+  return URL.canParse(origin) && new URL(origin).origin === new URL(DEFAULT_HOSTED_APP_URL).origin;
+}
+
 export function buildNewThreadLink(input: {
   readonly prompt: string;
   readonly repository?: PromptLinkRepository | null;
@@ -171,13 +176,16 @@ export function buildNewThreadLink(input: {
   readonly model?: string | null;
   readonly origin?: string;
 }): string {
-  const url = new URL("/new", input.origin ?? DEFAULT_HOSTED_APP_URL);
-  url.searchParams.set("prompt", input.prompt);
+  const search = new URLSearchParams({ prompt: input.prompt });
   if (input.repository) {
-    url.searchParams.set("repo", `${input.repository.owner}/${input.repository.name}`);
+    search.set("repo", `${input.repository.owner}/${input.repository.name}`);
   }
-  if (input.provider) url.searchParams.set("provider", input.provider);
-  if (input.provider && input.model) url.searchParams.set("model", input.model);
+  if (input.provider) search.set("provider", input.provider);
+  if (input.provider && input.model) search.set("model", input.model);
+  const origin = input.origin ?? DEFAULT_HOSTED_APP_URL;
+  if (opensInT3HostedApp(origin)) return promptLinkDeepLink(`/new?${search}`);
+  const url = new URL("/new", origin);
+  url.search = search.toString();
   return url.toString();
 }
 

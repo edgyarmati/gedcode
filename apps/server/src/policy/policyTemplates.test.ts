@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  MACOS_MANAGED_PREFERENCES_DOMAIN,
   WINDOWS_POLICY_GROUPS,
   WINDOWS_POLICY_LISTS,
   WINDOWS_POLICY_VALUES,
@@ -7,13 +8,25 @@ import {
 
 import { macosProfile, windowsAdmx } from "./policyTemplates.ts";
 
+it("installs the profile and template under GedCode's names, where its reader looks", () => {
+  const profile = macosProfile(
+    { schemaVersion: 1, organization: "Example Corp" },
+    { profile: "profile-uuid", payload: "payload-uuid" },
+  );
+  assert.equal(profile._tag, "Valid");
+  const xml = profile._tag === "Valid" ? profile.profile : "";
+  assert.include(xml, `<string>${MACOS_MANAGED_PREFERENCES_DOMAIN}</string>`);
+  assert.notInclude(xml, "t3tools");
+  assert.include(windowsAdmx(), '<target prefix="gedcode" namespace="GedCode.Policies.GedCode" />');
+});
+
 it("gives every registry value the Windows reader accepts a Group Policy control", () => {
   const admx = windowsAdmx();
   for (const name of Object.keys(WINDOWS_POLICY_VALUES)) {
     assert.include(admx, `valueName="${name}"`);
   }
   for (const key of Object.keys(WINDOWS_POLICY_LISTS)) {
-    assert.include(admx, `key="SOFTWARE\\Policies\\T3Tools\\T3Code\\${key}"`);
+    assert.include(admx, `key="SOFTWARE\\Policies\\GedCode\\GedCode\\${key}"`);
   }
   for (const name of Object.keys(WINDOWS_POLICY_GROUPS)) {
     assert.include(admx, `valueName="${name}"`);

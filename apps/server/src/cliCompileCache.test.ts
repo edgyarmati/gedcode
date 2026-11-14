@@ -59,7 +59,7 @@ it.live("loads the CLI with its cache settings only when the command needs it", 
     expect(normal.exitCode).toBe(0);
     expect(normal.stderr).toContain("LOADED_CLI_MAIN");
     expect(normal.stderr.replaceAll("\\", "/")).toContain(
-      `CACHE=${root}/cache/t3code/compile-cache`.replaceAll("\\", "/"),
+      `CACHE=${root}/cache/gedcode/compile-cache`.replaceAll("\\", "/"),
     );
     const launcher = yield* run({ T3CODE_HOME: "" }, ["__service-launcher"]);
     expect(launcher.exitCode).toBe(1);
@@ -68,7 +68,7 @@ it.live("loads the CLI with its cache settings only when the command needs it", 
     const launcherHelp = yield* run({ T3CODE_HOME: "" }, ["__service-launcher", "--help"]);
     expect(launcherHelp.exitCode).toBe(0);
     expect(launcherHelp.stderr).toContain("LOADED_CLI_MAIN");
-    expect(launcherHelp.stdout).toContain("t3 __service-launcher [flags]");
+    expect(launcherHelp.stdout).toContain("gedcode __service-launcher [flags]");
     const launcherFlags = yield* run({ T3CODE_HOME: "" }, [
       "__service-launcher",
       "--log-level",
@@ -77,7 +77,7 @@ it.live("loads the CLI with its cache settings only when the command needs it", 
     expect(launcherFlags.exitCode).toBe(1);
     expect(launcherFlags.stderr).toContain("LOADED_CLI_MAIN");
     expect(launcherFlags.stderr).toContain("[service-launcher] T3CODE_HOME is required");
-    const cacheDir = `${root}/cache/t3code/compile-cache`;
+    const cacheDir = `${root}/cache/gedcode/compile-cache`;
     yield* fs.makeDirectory(`${cacheDir}/v24.0.0-x64-legacy-1000`, { recursive: true });
     yield* fs.writeFileString(`${cacheDir}/v24.0.0-x64-legacy-1000/0123abcd`, "stale");
     yield* fs.makeDirectory(`${cacheDir}/server`, { recursive: true });

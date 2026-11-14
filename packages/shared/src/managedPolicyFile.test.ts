@@ -10,6 +10,7 @@ import { ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "./HostProcess.ts";
 
 import {
+  MACOS_MANAGED_PREFERENCES_DOMAIN,
   MACOS_MANAGED_PREFERENCES_PATH,
   managedPolicyPath,
   readManagedPolicy,
@@ -110,6 +111,21 @@ const read = (
     }),
     Effect.provide(machine(files, commands, registry)),
   );
+
+// A T3 Code policy on the same machine must not lock GedCode, and GedCode's must not lock T3 Code.
+it("reads policy only from GedCode's own locations", () => {
+  assert.deepStrictEqual((["darwin", "win32", "linux"] as const).map(managedPolicyPath), [
+    "/Library/Application Support/GedCode/policy.json",
+    "C:\\Program Files\\GedCode\\policy.json",
+    "/etc/gedcode/policy.json",
+  ]);
+  assert.equal(MACOS_MANAGED_PREFERENCES_DOMAIN, "com.gedcode.app");
+  assert.equal(
+    MACOS_MANAGED_PREFERENCES_PATH,
+    "/Library/Managed Preferences/com.gedcode.app.plist",
+  );
+  assert.equal(WINDOWS_POLICY_KEY, "HKLM\\SOFTWARE\\Policies\\GedCode\\GedCode");
+});
 
 describe("readManagedPolicy", () => {
   it.effect("reads a macOS configuration profile, and refuses one beside a policy file", () =>

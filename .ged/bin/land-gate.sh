@@ -178,7 +178,8 @@ const fail = (m) => { console.error("BLOCKED: " + m); process.exit(1); };
 
 // Must match ProviderDriverKind in packages/contracts/src/model.ts.
 const DRIVER_KINDS = new Set([
-  "codex", "claudeagent", "cursor", "grok", "muse", "pi", "acpregistry", "opencode",
+  "codex", "claudeagent", "cursor", "grok", "fx", "kiro", "muse", "pi", "acpregistry", "opencode",
+  "antigravity",
 ]);
 
 let v;

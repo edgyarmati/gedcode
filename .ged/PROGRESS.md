@@ -609,5 +609,13 @@ Merged upstream `756545a917` on `integrate-upstream-20261114`. Resolved seams an
 are listed in DECISIONS. Server, desktop, web, contracts, client-runtime, provider-core, shared and
 scripts typecheck clean. Focused suites pass: server Ged, memory and v0.4 import (82); desktop
 electron (54, 1 skipped); Codex instructions and context budget (7). Translations need no edits.
-Release notes are in `docs/ged/releases/0.7.0.md`. Pending: the identity audit, `check:changed`,
-a desktop build, two independent reviews, landing, workflow disablement and the v0.7.0 tag.
+Release notes are in `docs/ged/releases/0.7.0.md`.
+
+Identity audit of the new upstream features: copied thread and prompt links, managed policy
+locations and templates, the CLI compile cache and the land gate's provider kinds now use GedCode's
+identity (see DECISIONS). `check:changed` passes apart from the five macOS-environmental tests,
+which pass on a case-sensitive volume. A local `dist:desktop:artifact` 0.7.0 build produced the dmg
+and zip with `com.gedcode.app`, the GedCode Sparkle feed and key and the `gedcode` scheme; all 1,011
+packaged JS bundles pass `node --check`, and the packaged CLI reports `gedcode v0.7.0` and writes
+`gedcode.*` policy templates. Upstream's resource monitor needs rustc 1.95 or later; CI installs
+stable. Pending: two independent reviews, landing, workflow disablement and the v0.7.0 tag.

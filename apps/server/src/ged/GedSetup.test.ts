@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import { BUILT_IN_DRIVERS } from "../provider/builtInDrivers.ts";
 import * as GedSetup from "./GedSetup.ts";
 import { LAND_GATE } from "./starter/landGate.ts";
 import { STARTER_FILES } from "./starter/index.ts";
@@ -91,3 +92,11 @@ it.effect("installs the same land gate this repository runs", () =>
     expect(LAND_GATE).toBe(ours);
   }).pipe(Effect.provide(layer)),
 );
+
+it("accepts a verdict naming any built-in provider, and no other", () => {
+  const listed = /const DRIVER_KINDS = new Set\(\[([^\]]*)\]\)/.exec(LAND_GATE)?.[1] ?? "";
+  const kinds = [...listed.matchAll(/"([^"]+)"/g)].map(([, kind]) => kind);
+  expect(kinds.toSorted()).toEqual(
+    BUILT_IN_DRIVERS.map(({ driverKind }) => driverKind.toLowerCase()).toSorted(),
+  );
+});

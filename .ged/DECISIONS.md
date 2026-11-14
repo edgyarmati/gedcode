@@ -773,3 +773,25 @@ Codex entry cap are all unchanged.
 Upstream added three workflows that cannot run here: Issue Vouch, Mobile dev client (it needs
 Blacksmith runners and T3 secrets) and PR Limits. Disable them right after pushing main instead of
 deleting the files. T3 Connect stays unavailable.
+
+Copied thread and prompt links used to point at `app.t3.codes`, T3's hosted app. GedCode has none,
+so the shared helpers in `threadLinks.ts` and `promptLinks.ts` turn a link aimed at T3's hosted
+origin, including the default, into a `gedcode://` deep link. The parser reads those back as thread
+chips. Call sites are unchanged, and an explicitly configured non-T3 origin is still honored.
+
+Managed policy now lives in GedCode's own locations: `GedCode` folders, `/etc/gedcode`, the
+`com.gedcode.app` preference domain and the `GedCode\GedCode` registry key. Otherwise a T3 Code policy
+on the same machine would lock GedCode, and GedCode's would lock T3 Code. The configuration profile
+takes its domain from the reader's constant so the two cannot diverge. `docs/ged/user/managed-policy.md`
+lists the locations. Upstream's guide is left unedited.
+
+The land gate accepts every built-in provider's driver kind, including fx, Kiro and Antigravity, and
+a test pins the list to `BUILT_IN_DRIVERS`. The gate released through 0.6 is kept as the
+`CROSS_VENDOR_LAND_GATE` fingerprint, so projects that installed it are offered the upgrade instead of
+being treated as custom.
+
+check:changed on a default Mac fails five upstream tests for environmental reasons: the `/var` →
+`/private/var` temp-directory symlink (AgentSessionScanner, ManagedProjectFolders) and the
+case-insensitive filesystem (ClaudeSkills `PSTACK`, DesktopLinuxUrlHandler icon spellings). Ged CI
+does not run them. To check them locally, point `TMPDIR` at a directory on a case-sensitive APFS
+image with no symlink in its path; all five pass there.

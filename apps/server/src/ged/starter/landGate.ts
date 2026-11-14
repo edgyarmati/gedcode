@@ -163,8 +163,8 @@ esac
 record=".ged/verdicts/`,
 );
 
-/** Cross-vendor review is preferred; installed providers do not prove usable quota or auth. */
-export const LAND_GATE = OPT_OUT_LAND_GATE.replace(
+/** Stock gate released through 0.6, retained for exact-match upgrades. */
+export const CROSS_VENDOR_LAND_GATE = OPT_OUT_LAND_GATE.replace(
   "  verifiers.push({ vv, who, otherVendorAvailable: r.otherVendorAvailable });",
   `  if (r.selectionReason !== undefined && (typeof r.selectionReason !== "string" || !r.selectionReason.trim() || r.selectionReason.length > 500)) {
     fail(\`the review by \${who} has an invalid selectionReason\`);
@@ -184,4 +184,11 @@ export const LAND_GATE = OPT_OUT_LAND_GATE.replace(
   for (const r of verifiers) {
     if (r.selectionReason) console.error(\`WARNING: reviewer selection (\${r.who}): \${r.selectionReason}\`);
   }`,
+);
+
+/** Cross-vendor review is preferred; installed providers do not prove usable quota or auth. */
+export const LAND_GATE = CROSS_VENDOR_LAND_GATE.replace(
+  `  "codex", "claudeagent", "cursor", "grok", "muse", "pi", "acpregistry", "opencode",`,
+  `  "codex", "claudeagent", "cursor", "grok", "fx", "kiro", "muse", "pi", "acpregistry", "opencode",
+  "antigravity",`,
 );

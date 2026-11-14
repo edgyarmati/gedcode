@@ -16,7 +16,12 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
-import { LAND_GATE, LEGACY_LAND_GATE, OPT_OUT_LAND_GATE } from "../../../ged/starter/landGate.ts";
+import {
+  CROSS_VENDOR_LAND_GATE,
+  LAND_GATE,
+  LEGACY_LAND_GATE,
+  OPT_OUT_LAND_GATE,
+} from "../../../ged/starter/landGate.ts";
 import * as GedSetup from "../../../ged/GedSetup.ts";
 import * as GedSetupOffers from "../../../ged/GedSetupOffers.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
@@ -736,6 +741,14 @@ it.effect(
           applied: false,
         });
         expect(yield* fs.readFileString(gate)).toBe(OPT_OUT_LAND_GATE);
+        expect(yield* call(root, "ged_review_gate_update", { apply: true })).toEqual({
+          status: "current",
+          applied: true,
+        });
+        expect(yield* fs.readFileString(gate)).toBe(LAND_GATE);
+        // So is the gate released before it accepted every built-in provider.
+        yield* fs.writeFileString(gate, CROSS_VENDOR_LAND_GATE);
+        expect(yield* policy(root)).toMatchObject({ gate: "legacy", gateSupportsOptOut: true });
         expect(yield* call(root, "ged_review_gate_update", { apply: true })).toEqual({
           status: "current",
           applied: true,

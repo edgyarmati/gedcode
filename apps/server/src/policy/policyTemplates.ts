@@ -1,5 +1,6 @@
 import type { ManagedPolicyDocument } from "@t3tools/contracts";
 import {
+  MACOS_MANAGED_PREFERENCES_DOMAIN,
   WINDOWS_POLICY_KEY,
   WINDOWS_POLICY_GROUPS,
   WINDOWS_POLICY_LISTS,
@@ -96,7 +97,7 @@ const policies = (): ReadonlyArray<Policy> => [
         kind: "checkbox",
         list: "Clients",
         name: "remote",
-        label: "Remote: phones, other computers, app.t3.codes",
+        label: "Remote: phones, other computers, browsers",
         defaultChecked: false,
       },
     ],
@@ -237,7 +238,7 @@ export function windowsAdmx(): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
   <policyNamespaces>
-    <target prefix="t3code" namespace="T3Tools.Policies.T3Code" />
+    <target prefix="gedcode" namespace="GedCode.Policies.GedCode" />
   </policyNamespaces>
   <resources minRequiredRevision="1.0" />
   <supportedOn>
@@ -337,7 +338,7 @@ const nullPath = (
   return undefined;
 };
 
-/** A device configuration profile that installs `document` for `com.t3tools.t3code`. */
+/** A device configuration profile that installs `document` for GedCode's preference domain. */
 export function macosProfile(
   document: ManagedPolicyDocument,
   uuids: { readonly profile: string; readonly payload: string },
@@ -358,8 +359,8 @@ export function macosProfile(
     PayloadContent: [
       {
         PayloadDisplayName: "T3 Code policy",
-        PayloadIdentifier: `com.t3tools.t3code.policy.${uuids.payload}`,
-        PayloadType: "com.t3tools.t3code",
+        PayloadIdentifier: `${MACOS_MANAGED_PREFERENCES_DOMAIN}.policy.${uuids.payload}`,
+        PayloadType: MACOS_MANAGED_PREFERENCES_DOMAIN,
         PayloadUUID: uuids.payload,
         PayloadVersion: 1,
         ...document,
@@ -367,7 +368,7 @@ export function macosProfile(
     ],
     PayloadDescription: "Configures T3 Code for every user on this Mac.",
     PayloadDisplayName: `T3 Code policy for ${document.organization}`,
-    PayloadIdentifier: `com.t3tools.t3code.policy`,
+    PayloadIdentifier: `${MACOS_MANAGED_PREFERENCES_DOMAIN}.policy`,
     PayloadOrganization: document.organization,
     PayloadScope: "System",
     PayloadType: "Configuration",
