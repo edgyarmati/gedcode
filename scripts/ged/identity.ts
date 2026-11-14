@@ -173,7 +173,16 @@ export function applyGedStagePackageIdentity<T extends { readonly build: Json }>
 }
 
 const TEXT_EXTENSIONS = new Set([".js", ".cjs", ".mjs", ".html", ".json", ".webmanifest", ".txt"]);
-const JAVASCRIPT_EXTENSIONS = new Set([".js", ".cjs", ".mjs"]);
+
+/**
+ * The parse goals each JavaScript file may be loaded with (`true` for module). A `.js` file can be
+ * either, as a browser chunk or classic worker as much as under Node, so both readings must agree.
+ */
+const JAVASCRIPT_GOALS = new Map<string, ReadonlyArray<boolean>>([
+  [".mjs", [true]],
+  [".cjs", [false]],
+  [".js", [false, true]],
+]);
 
 /** Strips parentheses and comma sequences, so `(0, require)` resolves to `require`. */
 const unwrap = (node: ts.Expression): ts.Expression => {
@@ -197,9 +206,10 @@ const nameOf = (node: ts.Expression): string | undefined => {
 };
 
 /**
- * Whether calling `node` loads or resolves a module: `import`, anything named `require`, a
- * `createRequire(...)` result, or any member of those or of `import.meta`. Computed keys are not
- * evaluated. A loader stored under another name, such as `const load = require`, is not followed.
+ * Whether calling or constructing `node` loads or resolves a module: `import`, anything named
+ * `require`, a `createRequire(...)` result, or any member of those or of `import.meta`. Computed keys
+ * are not evaluated. A loader stored under another name, such as `const load = require`, is not
+ * followed.
  */
 const loadsModules = (node: ts.Expression): boolean => {
   const target = unwrap(node);
@@ -216,11 +226,12 @@ const loadsModules = (node: ts.Expression): boolean => {
 const TOLERATED_DIAGNOSTICS = new Set([1121, 1487]);
 
 /**
- * Whether TypeScript reads `<!--` as code (`a < !--b`). Scripts read it as a line comment, the one
- * Annex B syntax that moves token boundaries, so literal ranges would no longer match Node's.
- * The script form of `-->` always fails TypeScript's parse instead.
+ * Whether a script has `<!--` that TypeScript reads as code (`a < !--b`). Scripts read it as a line
+ * comment, the one Annex B syntax that moves token boundaries, so literal ranges would no longer
+ * match Node's. Modules have no HTML comments, and the script form of `-->` fails TypeScript's parse.
  */
 const readsHtmlCommentAsCode = (module: ts.SourceFile): boolean => {
+  if (ts.isExternalModule(module)) return false;
   const visit = (node: ts.Node): boolean => {
     if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
       const start = node.getStart(module);
@@ -240,11 +251,18 @@ export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParse
   }
 }
 
-function rebrandJavaScript(source: string): string {
+function rebrandLiterals(source: string, asModule: boolean): string {
   const module = ts.createSourceFile(
     "bundle.js",
     source,
-    ts.ScriptTarget.Latest,
+    {
+      languageVersion: ts.ScriptTarget.Latest,
+      // Otherwise TypeScript guesses the goal from import/export syntax, yet `await /x/g` is a regex
+      // only in a module. `externalModuleIndicator` is not in the public typings; unset is a script.
+      setExternalModuleIndicator: (file) => {
+        if (asModule) (file as { externalModuleIndicator?: true }).externalModuleIndicator = true;
+      },
+    },
     false,
     ts.ScriptKind.JS,
   );
@@ -269,8 +287,8 @@ function rebrandJavaScript(source: string): string {
         ts.isExportDeclaration(parent) ||
         ts.isImportSpecifier(parent) ||
         ts.isExportSpecifier(parent) ||
-        (ts.isCallExpression(parent) &&
-          node === parent.arguments[0] &&
+        ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) &&
+          node === parent.arguments?.[0] &&
           loadsModules(parent.expression)));
     if (moduleSyntax) return;
     if (
@@ -298,6 +316,16 @@ function rebrandJavaScript(source: string): string {
   return parts.join("");
 }
 
+function rebrandJavaScript(source: string, goals: ReadonlyArray<boolean>): string {
+  const [rebranded = source, ...others] = goals.map((asModule) =>
+    rebrandLiterals(source, asModule),
+  );
+  if (others.some((other) => other !== rebranded)) {
+    throw new Error("module and script parses rebrand it differently");
+  }
+  return rebranded;
+}
+
 const isUtf8 = (bytes: Uint8Array): boolean => {
   try {
     new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -315,8 +343,8 @@ const replaceCheckedJavaScript = Effect.fn("replaceCheckedJavaScript")(function*
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  // A fresh sibling directory keeps the extension and nearest package.json, so Node picks the
-  // module format it will load the file with, and cleanup can only touch what staging created.
+  // A fresh sibling directory keeps the extension and nearest package.json, so Node checks the
+  // format they give, and cleanup can only touch what staging created.
   const scratch = yield* fs.makeTempDirectoryScoped({
     directory: path.dirname(file),
     prefix: ".ged-rebrand-",
@@ -364,9 +392,10 @@ export const rebrandStagedBundles = Effect.fn("rebrandStagedBundles")(function* 
         return yield* new StagedBundleParseError({ file, reason: "not valid UTF-8" });
       }
       // Minified identifiers can be T3 or t3; only rewrite JavaScript literal text.
-      const rebranded = JAVASCRIPT_EXTENSIONS.has(path.extname(entry))
+      const goals = JAVASCRIPT_GOALS.get(path.extname(entry));
+      const rebranded = goals
         ? yield* Effect.try({
-            try: () => rebrandJavaScript(original),
+            try: () => rebrandJavaScript(original, goals),
             catch: (cause) =>
               new StagedBundleParseError({
                 file,
@@ -375,7 +404,7 @@ export const rebrandStagedBundles = Effect.fn("rebrandStagedBundles")(function* 
           })
         : rebrandText(original);
       if (rebranded === original) continue;
-      if (JAVASCRIPT_EXTENSIONS.has(path.extname(entry))) {
+      if (goals) {
         yield* replaceCheckedJavaScript(file, rebranded);
       } else {
         yield* fs.writeFileString(file, rebranded);

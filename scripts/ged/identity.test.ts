@@ -184,6 +184,7 @@ describe("GedCode identity", () => {
           'export const keyed=()=>[require["res"+"olve"]("./T3 Code.cjs"),import.meta.resolve("./T3 Code.mjs")];',
           'export const nested=()=>[require.main.require("./T3 Code.cjs"),require.resolve.paths("T3 Code"),module.require("./T3 Code.cjs"),module["require"]("./T3 Code.cjs")];',
           'export const created=()=>[createRequire(import.meta.url)("./T3 Code.cjs"),NodeModule.createRequire(import.meta.url).resolve("./T3 Code.cjs")];',
+          'export const constructed=()=>[new require("./T3 Code.cjs"),new (createRequire(import.meta.url))("./T3 Code.cjs")];',
           'const T3="ArrowRight",t3=2;',
           "export {T3 as si,t3 as cli};",
           'export const name="T3 Code (Beta)";',
@@ -194,7 +195,15 @@ describe("GedCode identity", () => {
           "// T3 Code: T3 as t3",
         ].join("\n");
         // Sloppy-mode octal escapes are valid CommonJS that TypeScript's parser reports.
-        const commonjs = 'var reset="\\033[0m T3 Code";exports.load=()=>require("./T3 Code.cjs");';
+        const commonjs = [
+          'var reset="\\033[0m T3 Code";exports.load=()=>require("./T3 Code.cjs");',
+          // In a script `await` can be a variable, so this divides by a string.
+          'var await=1,g=1;exports.ratio=await /"T3 Code"/g;',
+        ].join("\n");
+        // Without static imports or exports, only the module goal says `/.../g` is a regex.
+        const awaited =
+          'const pattern=await /"T3 Code"/g;globalThis.ged=[pattern.source,"T3 Code"];';
+        yield* fs.writeFileString(path.join(root, "client/assets/awaited.mjs"), awaited);
         for (const extension of ["js", "mjs"]) {
           yield* fs.writeFileString(path.join(root, `client/assets/app.${extension}`), javascript);
         }
@@ -221,14 +230,18 @@ describe("GedCode identity", () => {
 
         const changed = yield* rebrandStagedBundles([root]);
 
-        assert.equal(changed, 5);
+        assert.equal(changed, 6);
         assert.equal(
           yield* fs.readFileString(path.join(root, "client/index.html")),
           "<title>GedCode</title>",
         );
         assert.equal(
           yield* fs.readFileString(path.join(root, "client/assets/app.cjs")),
-          commonjs.replace("[0m T3 Code", "[0m GedCode"),
+          commonjs.replace("[0m T3 Code", "[0m GedCode").replace('/"T3 Code"/', '/"GedCode"/'),
+        );
+        assert.equal(
+          yield* fs.readFileString(path.join(root, "client/assets/awaited.mjs")),
+          awaited.replace(',"T3 Code"]', ',"GedCode"]'),
         );
         for (const extension of ["js", "mjs"]) {
           assert.equal(
@@ -294,6 +307,11 @@ describe("GedCode identity", () => {
         ["app.mjs", 'export const name="T3 Code";export const load=()=>import(/(/);'],
         ["app.cjs", 'const name="T3 Code";const pending;'],
         ["app.js", 'const name="T3 Code";const view=<p>T3 Code</p>;'],
+        // A browser may load a `.js` file as a module or a classic script, which read this differently.
+        [
+          "awaited.js",
+          'const pattern=await /"T3 Code"/g;globalThis.ged=[pattern.source,"T3 Code"];',
+        ],
       ] as const) {
         const root = yield* fs.makeTempDirectoryScoped();
         yield* fs.writeFileString(path.join(root, name), source);
@@ -303,6 +321,7 @@ describe("GedCode identity", () => {
 
         assert.include(String(error), name);
         if (source.includes("<!--b")) assert.include(String(error), "parses as code");
+        if (name === "awaited.js") assert.include(String(error), "module and script");
         assert.sameMembers(yield* fs.readDirectory(root), [name, `.ged-rebrand-${name}`]);
         assert.equal(yield* fs.readFileString(path.join(root, name)), source);
         assert.equal(

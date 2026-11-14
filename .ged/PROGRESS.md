@@ -581,3 +581,11 @@ file's mode (latent: no executable entry point contains the product name), now c
 also measured quadratic cost on huge templates (400 KB, 5,000 placeholders: about 13 s); accepted,
 since real staging takes about 6 s and bounding the context would tie it to today's lookaheads.
 Tests failed first; real staging is byte-identical (56 files).
+
+Round 9 failed both fresh reviews on one criterion each. Codex: `new require("./T3 Code.cjs")` and
+`new (createRequire(...))(...)` load modules but only calls were recognised; `new` is now treated
+the same. Opus: TypeScript chose the parse goal from import/export syntax, so a module without them
+read `await /"T3 Code"/g` as division by a string and rebranded the regex. Files now parse in the
+goal they load with: `.mjs` module, `.cjs` script, and `.js` both, refused when the readings
+disagree, because every staged `.js` is a browser asset (module chunks, classic workers) whose goal
+no package.json decides. Tests failed first; real staging is byte-identical (56 files).

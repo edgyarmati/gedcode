@@ -456,16 +456,20 @@ can name a binding `T3`; rewriting code such as `export {T3 as si}` breaks modul
 retain their syntax; module specifiers (including parenthesized, comma-sequenced and computed `require`) and quoted
 import/export bindings are excluded, as is the first argument of any call that loads or resolves
 modules: `import()`, anything named `require` (including `module.require`), a `createRequire(...)`
-result, and any member of those or of `import.meta` (computed keys are not evaluated). A loader
+result, and any member of those or of `import.meta` (computed keys are not evaluated), whether
+called or constructed with `new`. A loader
 stored under another name (`const load = require`, esbuild's `__require`) is not followed, since
 that needs data-flow analysis; no real bundle specifier contains the product name. Only files with
 a product-name match are touched. Such a file must be valid UTF-8 and is rewritten only from a
 TypeScript parse with no errors other than sloppy-mode octals (grammar-only diagnostics), and the
 result replaces the original only if `node --check` accepts it, so staging can never write a file
 Node would refuse to load or bytes it could not decode. Valid output is not enough: TypeScript's
-literal ranges must also be Node's. The one Annex B syntax that moves token boundaries is the
-HTML-like comment, so a file where TypeScript reads `<!--` as code is refused (`-->` already fails
-its parse). Other strings stay text even when code uses them as names, such as
+literal ranges must also be the loader's. A file is parsed in the goal it loads with, not the one
+TypeScript would guess from import/export syntax: `.mjs` as a module, `.cjs` as a script, and `.js`
+as both, because browsers load it either way (chunks as modules, workers as classic scripts), so a
+`.js` file whose two readings rebrand differently (`await /T3 Code/`) is refused. The one Annex B
+syntax that moves token boundaries is the HTML-like comment, so a script where TypeScript reads
+`<!--` as code is refused (`-->` already fails its parse). Other strings stay text even when code uses them as names, such as
 `new URL("./T3 Code.png", import.meta.url)` or `obj["T3 Code"]`; the builds contain none. Files without a match are not judged:
 they ship as the build produced them. Template
 rules can inspect following interpolations without rewriting them, preserving version hints such
