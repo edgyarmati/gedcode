@@ -589,3 +589,11 @@ read `await /"T3 Code"/g` as division by a string and rebranded the regex. Files
 goal they load with: `.mjs` module, `.cjs` script, and `.js` both, refused when the readings
 disagree, because every staged `.js` is a browser asset (module chunks, classic workers) whose goal
 no package.json decides. Tests failed first; real staging is byte-identical (56 files).
+
+Round 10: Codex passed; Opus found the Node check hollow for `.js`. Without a package.json type,
+`node --check file.js` exits 0 for any file with module syntax, so 47 of the 56 real rewrites went
+unchecked and `export {missing}` staged. The rewrite is now checked on stdin with an explicit
+`--input-type` for each goal the file may load with, before anything is written, which also removed
+the scratch-directory, chmod and rename machinery. The AST walk is iterative, since a 1,500-term
+minified `+` chain overflowed the recursive one. Tests failed first; real staging is byte-identical
+(56 files).

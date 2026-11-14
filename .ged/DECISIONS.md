@@ -462,7 +462,9 @@ stored under another name (`const load = require`, esbuild's `__require`) is not
 that needs data-flow analysis; no real bundle specifier contains the product name. Only files with
 a product-name match are touched. Such a file must be valid UTF-8 and is rewritten only from a
 TypeScript parse with no errors other than sloppy-mode octals (grammar-only diagnostics), and the
-result replaces the original only if `node --check` accepts it, so staging can never write a file
+result is written only if Node's own parser accepts it in one of those goals (`node --check
+--input-type=module|commonjs` on stdin; a plain `node --check` skips any `.js` file it detects as a
+module), so staging can never write a file
 Node would refuse to load or bytes it could not decode. Valid output is not enough: TypeScript's
 literal ranges must also be the loader's. A file is parsed in the goal it loads with, not the one
 TypeScript would guess from import/export syntax: `.mjs` as a module, `.cjs` as a script, and `.js`

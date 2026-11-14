@@ -225,23 +225,6 @@ const loadsModules = (node: ts.Expression): boolean => {
 // Sloppy-mode octals are legal in scripts and leave token boundaries intact; Node judges the output.
 const TOLERATED_DIAGNOSTICS = new Set([1121, 1487]);
 
-/**
- * Whether a script has `<!--` that TypeScript reads as code (`a < !--b`). Scripts read it as a line
- * comment, the one Annex B syntax that moves token boundaries, so literal ranges would no longer
- * match Node's. Modules have no HTML comments, and the script form of `-->` fails TypeScript's parse.
- */
-const readsHtmlCommentAsCode = (module: ts.SourceFile): boolean => {
-  if (ts.isExternalModule(module)) return false;
-  const visit = (node: ts.Node): boolean => {
-    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
-      const start = node.getStart(module);
-      if (module.text[start - 1] === "<" && module.text.startsWith("!--", start)) return true;
-    }
-    return ts.forEachChild(node, visit) ?? false;
-  };
-  return visit(module);
-};
-
 export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParseError>()(
   "StagedBundleParseError",
   { file: Schema.String, reason: Schema.String },
@@ -274,13 +257,26 @@ function rebrandLiterals(source: string, asModule: boolean): string {
   if (diagnostic !== undefined) {
     throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
   }
-  if (readsHtmlCommentAsCode(module)) {
-    throw new Error("`<!--` would be a comment in a script but parses as code");
-  }
   const parts: string[] = [];
   let offset = 0;
-  const visit = (node: ts.Node, parent?: ts.Node, templateEnd?: number): void => {
-    if (ts.isTemplateExpression(node)) templateEnd = node.end;
+  // An explicit stack in source order: minified `a+b+...` chains nest thousands of nodes deep.
+  const stack: Array<{ node: ts.Node; parent?: ts.Node; templateEnd: number | undefined }> = [
+    { node: module, templateEnd: undefined },
+  ];
+  for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+    const { node, parent } = next;
+    const templateEnd = ts.isTemplateExpression(node) ? node.end : next.templateEnd;
+    // Scripts read `<!--` as a line comment, the one Annex B syntax that moves token boundaries;
+    // TypeScript reads `a < !--b`. Modules have none, and `-->` already fails TypeScript's parse.
+    if (
+      !asModule &&
+      ts.isPrefixUnaryExpression(node) &&
+      node.operator === ts.SyntaxKind.ExclamationToken &&
+      source[node.getStart(module) - 1] === "<" &&
+      source.startsWith("!--", node.getStart(module))
+    ) {
+      throw new Error("`<!--` would be a comment in a script but parses as code");
+    }
     const moduleSyntax =
       parent &&
       (ts.isImportDeclaration(parent) ||
@@ -290,7 +286,7 @@ function rebrandLiterals(source: string, asModule: boolean): string {
         ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) &&
           node === parent.arguments?.[0] &&
           loadsModules(parent.expression)));
-    if (moduleSyntax) return;
+    if (moduleSyntax) continue;
     if (
       ts.isStringLiteralLike(node) ||
       ts.isTemplateHead(node) ||
@@ -308,9 +304,11 @@ function rebrandLiterals(source: string, asModule: boolean): string {
         offset = node.end;
       }
     }
-    ts.forEachChild(node, (child) => visit(child, node, templateEnd));
-  };
-  visit(module);
+    const children: ts.Node[] = [];
+    ts.forEachChild(node, (child) => void children.push(child));
+    for (const child of children.toReversed())
+      stack.push({ node: child, parent: node, templateEnd });
+  }
   if (parts.length === 0) return source;
   parts.push(source.slice(offset));
   return parts.join("");
@@ -335,35 +333,32 @@ const isUtf8 = (bytes: Uint8Array): boolean => {
   }
 };
 
-/** Replaces `file` only if Node's own parser accepts the rewrite, which TypeScript's cannot promise. */
-const replaceCheckedJavaScript = Effect.fn("replaceCheckedJavaScript")(function* (
-  file: string,
+/**
+ * Whether Node accepts `contents` in one of the goals it may be loaded with, which TypeScript's parse
+ * cannot promise. Stdin with an explicit `--input-type`: for a `.js` file without a package.json
+ * type, `node --check` skips files it detects as modules.
+ */
+const nodeAccepts = Effect.fn("nodeAccepts")(function* (
   contents: string,
+  goals: ReadonlyArray<boolean>,
 ) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  // A fresh sibling directory keeps the extension and nearest package.json, so Node checks the
-  // format they give, and cleanup can only touch what staging created.
-  const scratch = yield* fs.makeTempDirectoryScoped({
-    directory: path.dirname(file),
-    prefix: ".ged-rebrand-",
-  });
-  const candidate = path.join(scratch, path.basename(file));
-  yield* fs.writeFileString(candidate, contents);
-  // The rename replaces the inode, so carry over the mode (executable entry points).
-  yield* fs.chmod(candidate, (yield* fs.stat(file)).mode & 0o7777);
-  const [exitCode, stderr] = yield* Effect.flatMap(
-    spawner.spawn(ChildProcess.make(process.execPath, ["--check", candidate])),
-    (child) =>
+  const failures: string[] = [];
+  for (const asModule of goals) {
+    const command = ChildProcess.make(
+      process.execPath,
+      ["--check", `--input-type=${asModule ? "module" : "commonjs"}`],
+      { stdin: Stream.make(new TextEncoder().encode(contents)) },
+    );
+    const [exitCode, stderr] = yield* Effect.flatMap(spawner.spawn(command), (child) =>
       Effect.all([child.exitCode, Stream.mkString(Stream.decodeText(child.stderr))], {
         concurrency: "unbounded",
       }),
-  );
-  if (exitCode !== 0) {
-    return yield* new StagedBundleParseError({ file, reason: stderr.trim() });
+    );
+    if (exitCode === 0) return undefined;
+    failures.push(stderr.trim());
   }
-  yield* fs.rename(candidate, file);
+  return failures.join("\n");
 }, Effect.scoped);
 
 /**
@@ -404,11 +399,11 @@ export const rebrandStagedBundles = Effect.fn("rebrandStagedBundles")(function* 
           })
         : rebrandText(original);
       if (rebranded === original) continue;
-      if (goals) {
-        yield* replaceCheckedJavaScript(file, rebranded);
-      } else {
-        yield* fs.writeFileString(file, rebranded);
+      const rejection = goals ? yield* nodeAccepts(rebranded, goals) : undefined;
+      if (rejection !== undefined) {
+        return yield* new StagedBundleParseError({ file, reason: rejection });
       }
+      yield* fs.writeFileString(file, rebranded);
       changed += 1;
     }
   }

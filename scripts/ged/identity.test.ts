@@ -221,16 +221,14 @@ describe("GedCode identity", () => {
           '\uFEFFexport const bom="T3 Code";',
         );
         yield* fs.writeFileString(path.join(root, "client/assets/logo.png"), "T3 Code");
-        // Shaped like a scratch name staging could pick; it must survive untouched.
-        const bystander = "export const unrelated=42;";
-        yield* fs.writeFileString(path.join(root, "client/assets/.ged-rebrand-app.mjs"), bystander);
+        // Minified concatenations nest deeper than a recursive walk can go.
+        const chain = `const x="";export const chain=${"x+".repeat(5000)}"T3 Code";`;
+        yield* fs.writeFileString(path.join(root, "client/assets/chain.mjs"), chain);
         yield* fs.writeFileString(path.join(root, "node_modules/dep/index.js"), "T3 Code");
-
-        yield* fs.chmod(path.join(root, "client/assets/app.mjs"), 0o755);
 
         const changed = yield* rebrandStagedBundles([root]);
 
-        assert.equal(changed, 6);
+        assert.equal(changed, 7);
         assert.equal(
           yield* fs.readFileString(path.join(root, "client/index.html")),
           "<title>GedCode</title>",
@@ -257,8 +255,8 @@ describe("GedCode identity", () => {
           );
         }
         assert.equal(
-          (yield* fs.stat(path.join(root, "client/assets/app.mjs"))).mode & 0o777,
-          0o755,
+          yield* fs.readFileString(path.join(root, "client/assets/chain.mjs")),
+          chain.replace('"T3 Code"', '"GedCode"'),
         );
         const module = yield* Effect.promise(
           () => import(NodeURL.pathToFileURL(path.join(root, "client/assets/app.mjs")).href),
@@ -277,10 +275,6 @@ describe("GedCode identity", () => {
         assert.deepEqual(
           [...(yield* fs.readFile(path.join(root, "client/assets/bom.js")))],
           [...new TextEncoder().encode('\uFEFFexport const bom="GedCode";')],
-        );
-        assert.equal(
-          yield* fs.readFileString(path.join(root, "client/assets/.ged-rebrand-app.mjs")),
-          bystander,
         );
         assert.equal(
           yield* fs.readFileString(path.join(root, "client/assets/logo.png")),
@@ -304,6 +298,9 @@ describe("GedCode identity", () => {
         ["comment.cjs", 'var a=1,b=2;a<!--b,`\nvar T3=1;exports.n="T3 Code";\n<!--`;\n'],
         ["shifted.cjs", 'var a=1,b=2;a<<!--b;"T3 Code"\n'],
         ["app.mjs", 'export const name="T3 Code";export {missing};'],
+        // Node's own check of a `.js` file skips any it detects as a module.
+        ["missing.js", 'export const name="T3 Code";export {missing};'],
+        ["octal.js", 'export const reset="\\033[0m T3 Code";'],
         ["app.mjs", 'export const name="T3 Code";export const load=()=>import(/(/);'],
         ["app.cjs", 'const name="T3 Code";const pending;'],
         ["app.js", 'const name="T3 Code";const view=<p>T3 Code</p>;'],
@@ -315,19 +312,14 @@ describe("GedCode identity", () => {
       ] as const) {
         const root = yield* fs.makeTempDirectoryScoped();
         yield* fs.writeFileString(path.join(root, name), source);
-        yield* fs.writeFileString(path.join(root, `.ged-rebrand-${name}`), "export {};");
 
         const error = yield* Effect.flip(rebrandStagedBundles([root]));
 
         assert.include(String(error), name);
         if (source.includes("<!--b")) assert.include(String(error), "parses as code");
         if (name === "awaited.js") assert.include(String(error), "module and script");
-        assert.sameMembers(yield* fs.readDirectory(root), [name, `.ged-rebrand-${name}`]);
+        assert.deepEqual(yield* fs.readDirectory(root), [name]);
         assert.equal(yield* fs.readFileString(path.join(root, name)), source);
-        assert.equal(
-          yield* fs.readFileString(path.join(root, `.ged-rebrand-${name}`)),
-          "export {};",
-        );
       }
       // A lossy decode would turn the invalid byte into U+FFFD and write that back.
       const invalid = Uint8Array.of(...new TextEncoder().encode('const name="T3 Code";//'), 0xff);
