@@ -56,14 +56,15 @@ export const ReviewStatus = Schema.Struct({
 export const GateUpdate = Schema.Struct({ status: ReviewGateStatus, applied: Schema.Boolean });
 const decodePolicyStatus = Schema.decodeUnknownEffect(Schema.fromJsonString(ReviewPolicyStatus));
 const decodePolicyInput = Schema.decodeUnknownEffect(ReviewPolicyInput);
+const encodePolicyInput = Schema.encodeEffect(Schema.fromJsonString(ReviewPolicyInput));
+// The gate reads the record as a document a human also opens and edits, so it is indented.
+const encodeVerdictRecord = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Unknown, { space: 2 }),
+);
 
-export class GedMemoryError extends Error {
-  readonly _tag = "GedMemoryError";
-  constructor(message: string) {
-    super(message);
-    this.name = "GedMemoryError";
-  }
-}
+export class GedMemoryError extends Schema.TaggedError<GedMemoryError>()("GedMemoryError", {
+  message: Schema.String,
+}) {}
 
 export class ProjectMemory extends Context.Service<
   ProjectMemory,
@@ -132,7 +133,7 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
 
   const memoryRoot = (root: string) => path.join(root, MEMORY_DIR);
 
-  const fail = (message: string) => Effect.fail(new GedMemoryError(message));
+  const fail = (message: string) => Effect.fail(new GedMemoryError({ message }));
 
   const present = (root: string) =>
     fs.exists(memoryRoot(root)).pipe(Effect.orElseSucceed(() => false));
@@ -142,7 +143,8 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
    * symlink is refused, since everything beneath it would then live elsewhere.
    */
   const realMemoryRoot = Effect.fn("ProjectMemory.realMemoryRoot")(function* (root: string) {
-    const missing = () => new GedMemoryError(`This project has no ${MEMORY_DIR}/ memory tree.`);
+    const missing = () =>
+      new GedMemoryError({ message: `This project has no ${MEMORY_DIR}/ memory tree.` });
     const expected = path.join(yield* fs.realPath(root).pipe(Effect.mapError(missing)), MEMORY_DIR);
     const actual = yield* fs.realPath(expected).pipe(Effect.mapError(missing));
     if (actual !== expected)
@@ -213,7 +215,7 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
       return yield* fail(`'${key}' is reached through a symlink; refusing to follow it.`);
     const info = yield* fs
       .stat(full)
-      .pipe(Effect.mapError(() => new GedMemoryError(`No memory document '${key}'.`)));
+      .pipe(Effect.mapError(() => new GedMemoryError({ message: `No memory document '${key}'.` })));
     if (info.type !== "File") return yield* fail(`'${key}' is not a readable document.`);
     if (Number(info.size) > MAX_DOCUMENT_BYTES)
       return yield* fail(
@@ -221,7 +223,7 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
       );
     return yield* fs
       .readFileString(full)
-      .pipe(Effect.mapError(() => new GedMemoryError(`'${key}' could not be read.`)));
+      .pipe(Effect.mapError(() => new GedMemoryError({ message: `'${key}' could not be read.` })));
   });
 
   // Parallel verifiers record into the same file; each read-merge-write must see
@@ -246,31 +248,39 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
             : ("custom" as const);
       return { status, supportsOptOut: body.split(/\r?\n/).includes(REVIEW_POLICY_GATE_MARKER) };
     },
-    Effect.mapError(() => new GedMemoryError("Could not inspect the review gate.")),
+    Effect.mapError(() => new GedMemoryError({ message: "Could not inspect the review gate." })),
   );
 
   const runPolicy = Effect.fn("ProjectMemory.runPolicy")(function* (
     root: string,
     input?: typeof ReviewPolicyInput.Type,
   ) {
+    const stdin = input
+      ? yield* encodePolicyInput(input).pipe(
+          Effect.mapError(() => new GedMemoryError({ message: "Invalid review policy input." })),
+        )
+      : undefined;
     const output = yield* processes
       .run({
         command: "node",
         args: ["--input-type=module", "-e", REVIEW_POLICY_SCRIPT, input ? "set" : "status"],
         cwd: root,
         // Structured input goes over stdin, never through a shell.
-        // @effect-diagnostics-next-line preferSchemaOverJson:off -- bundled Node runtime accepts JSON.
-        stdin: input ? JSON.stringify(input) : undefined,
+        stdin,
         timeout: "30 seconds",
         maxOutputBytes: 64 * 1024,
       })
       .pipe(
-        Effect.mapError(() => new GedMemoryError("Could not run the review policy evaluator.")),
+        Effect.mapError(
+          () => new GedMemoryError({ message: "Could not run the review policy evaluator." }),
+        ),
       );
     if (output.code !== 0)
       return yield* fail(output.stderr.trim() || "Could not update review policy.");
     return yield* decodePolicyStatus(output.stdout).pipe(
-      Effect.mapError(() => new GedMemoryError("Invalid review policy evaluator response.")),
+      Effect.mapError(
+        () => new GedMemoryError({ message: "Invalid review policy evaluator response." }),
+      ),
     );
   });
 
@@ -296,7 +306,9 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
   ) {
     yield* realMemoryRoot(root);
     const checked = yield* decodePolicyInput(input).pipe(
-      Effect.mapError(() => new GedMemoryError("Explicit scope, mode and reason are required.")),
+      Effect.mapError(
+        () => new GedMemoryError({ message: "Explicit scope, mode and reason are required." }),
+      ),
     );
     if (checked.mode === "skip" && !(yield* gateStatus(root)).supportsOptOut)
       return yield* fail(
@@ -320,7 +332,11 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
     // Rechecked on apply, not trusted from the caller's preview.
     yield* fs
       .writeFileString(file, LAND_GATE)
-      .pipe(Effect.mapError(() => new GedMemoryError("Could not upgrade the review gate.")));
+      .pipe(
+        Effect.mapError(
+          () => new GedMemoryError({ message: "Could not upgrade the review gate." }),
+        ),
+      );
     return { status: "current" as const, applied: true };
   }, policyLock.withPermits(1));
 
@@ -336,7 +352,11 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
     const dir = path.join(yield* realMemoryRoot(root), VERDICTS_DIR);
     yield* fs
       .makeDirectory(dir, { recursive: true })
-      .pipe(Effect.mapError(() => new GedMemoryError(`Could not open ${MEMORY_DIR}/verdicts.`)));
+      .pipe(
+        Effect.mapError(
+          () => new GedMemoryError({ message: `Could not open ${MEMORY_DIR}/verdicts.` }),
+        ),
+      );
     if ((yield* resolvesToItself(dir)) !== true)
       return yield* fail(
         `${MEMORY_DIR}/${VERDICTS_DIR} is a symlink; refusing to write through it.`,
@@ -353,14 +373,18 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
       Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))),
       Effect.orElseSucceed(() => undefined),
     );
-    // The toolkit validated the ruling against its schema before handing it over. The
-    // record is written indented rather than through a codec because the gate reads it
-    // as a document a human also opens and edits by hand.
-    // @effect-diagnostics-next-line preferSchemaOverJson:off
-    const body = `${JSON.stringify(mergeRuling(existing, ruling), null, 2)}\n`;
+    const body = yield* encodeVerdictRecord(mergeRuling(existing, ruling)).pipe(
+      Effect.mapError(
+        () => new GedMemoryError({ message: `Could not encode the verdict for ${slug}.` }),
+      ),
+    );
     yield* fs
-      .writeFileString(file, body)
-      .pipe(Effect.mapError(() => new GedMemoryError(`Could not write the verdict for ${slug}.`)));
+      .writeFileString(file, `${body}\n`)
+      .pipe(
+        Effect.mapError(
+          () => new GedMemoryError({ message: `Could not write the verdict for ${slug}.` }),
+        ),
+      );
     return `${MEMORY_DIR}/${VERDICTS_DIR}/${slug}.json`;
   }, verdictLock.withPermits(1));
 
@@ -382,7 +406,9 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
         maxOutputBytes: 64 * 1024,
         outputMode: "truncate",
       })
-      .pipe(Effect.mapError(() => new GedMemoryError("The land gate could not be run.")));
+      .pipe(
+        Effect.mapError(() => new GedMemoryError({ message: "The land gate could not be run." })),
+      );
     const detail = `${output.stdout}${output.stderr}`.trim();
     if (output.code === 0)
       return { allowed: true, outcome: "allowed", detail } satisfies LandRuling;

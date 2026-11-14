@@ -1,8 +1,8 @@
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
 import type { SparkleBridge, SparkleBridgeEvent } from "electron-sparkle-updater";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { SPARKLE_ED_PUBLIC_KEY, sparkleAppcastUrl } from "@t3tools/shared/sparkleUpdate";
@@ -14,12 +14,13 @@ import * as ElectronUpdater from "./ElectronUpdater.ts";
     await download completion, and replay offers while Sparkle defers re-checks.
     DesktopUpdates owns scheduling, channels and install timing. */
 
-export class ElectronSparkleUpdaterUnavailableError extends Data.TaggedError(
+export class ElectronSparkleUpdaterUnavailableError extends Schema.TaggedError<ElectronSparkleUpdaterUnavailableError>()(
   "ElectronSparkleUpdaterUnavailableError",
-)<{
-  readonly reason: "addon-unavailable" | "init-failed" | "unsupported-channel";
-  readonly detail: string;
-}> {
+  {
+    reason: Schema.Literals(["addon-unavailable", "init-failed", "unsupported-channel"]),
+    detail: Schema.String,
+  },
+) {
   override get message(): string {
     return `The Sparkle updater is unavailable (${this.reason}): ${this.detail}`;
   }
@@ -187,7 +188,7 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
   const ensureBridge: Effect.Effect<ElectronSparkleBridge, ElectronSparkleUpdaterUnavailableError> =
     Effect.suspend(() => {
       const feedUrl = resolveFeedUrl();
-      if (feedUrl instanceof ElectronSparkleUpdaterUnavailableError) return Effect.fail(feedUrl);
+      if (typeof feedUrl !== "string") return Effect.fail(feedUrl);
 
       const configure = (loaded: ElectronSparkleBridge) =>
         Effect.suspend(() => {

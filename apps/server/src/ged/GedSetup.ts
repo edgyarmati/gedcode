@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 
 import { STARTER_FILES } from "./starter/index.ts";
 
@@ -20,13 +21,9 @@ export interface GedSetupResult {
   readonly skipped: ReadonlyArray<string>;
 }
 
-export class GedSetupError extends Error {
-  readonly _tag = "GedSetupError";
-  constructor(message: string) {
-    super(message);
-    this.name = "GedSetupError";
-  }
-}
+export class GedSetupError extends Schema.TaggedError<GedSetupError>()("GedSetupError", {
+  message: Schema.String,
+}) {}
 
 export class GedSetup extends Context.Service<
   GedSetup,
@@ -46,7 +43,7 @@ const make = Effect.fn("GedSetup.make")(function* () {
       Effect.flatMap((info) =>
         info?.type === "Directory"
           ? Effect.void
-          : Effect.fail(new GedSetupError(`'${root}' is not a project directory.`)),
+          : Effect.fail(new GedSetupError({ message: `'${root}' is not a project directory.` })),
       ),
     );
 
@@ -83,9 +80,9 @@ const make = Effect.fn("GedSetup.make")(function* () {
     }
     const resolved = yield* fs.realPath(existing).pipe(Effect.orElseSucceed(() => ""));
     if (!isWithin(realRoot, resolved))
-      return yield* Effect.fail(
-        new GedSetupError(`${label} resolves outside the project; nothing was written there.`),
-      );
+      return yield* new GedSetupError({
+        message: `${label} resolves outside the project; nothing was written there.`,
+      });
   });
 
   // `wx` creates or fails, so a file that appears between the preview and the
@@ -100,7 +97,7 @@ const make = Effect.fn("GedSetup.make")(function* () {
     yield* confine(realRoot, path.dirname(full), label);
     yield* fs
       .makeDirectory(path.dirname(full), { recursive: true })
-      .pipe(Effect.mapError(() => new GedSetupError(`Could not create ${label}.`)));
+      .pipe(Effect.mapError(() => new GedSetupError({ message: `Could not create ${label}.` })));
     yield* confine(realRoot, path.dirname(full), label);
     return yield* fs.writeFileString(full, file.content, { flag: "wx", mode: file.mode }).pipe(
       Effect.as(true),
@@ -108,7 +105,7 @@ const make = Effect.fn("GedSetup.make")(function* () {
         PlatformError: (error) =>
           error.reason._tag === "AlreadyExists"
             ? Effect.succeed(false)
-            : Effect.fail(new GedSetupError(`Could not write ${file.path}.`)),
+            : Effect.fail(new GedSetupError({ message: `Could not write ${file.path}.` })),
       }),
     );
   });
@@ -117,7 +114,9 @@ const make = Effect.fn("GedSetup.make")(function* () {
     yield* requireDirectory(root);
     const realRoot = yield* fs
       .realPath(root)
-      .pipe(Effect.mapError(() => new GedSetupError(`'${root}' could not be resolved.`)));
+      .pipe(
+        Effect.mapError(() => new GedSetupError({ message: `'${root}' could not be resolved.` })),
+      );
     const outcomes = yield* Effect.forEach(STARTER_FILES, (file) =>
       writeIfAbsent(realRoot, file).pipe(Effect.map((written) => ({ path: file.path, written }))),
     );

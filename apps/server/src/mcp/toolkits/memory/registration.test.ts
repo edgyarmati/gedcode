@@ -86,7 +86,7 @@ const serverLayer = (root: string) => {
     worktreePath: root,
   } as OrchestrationV2ThreadShell;
   return McpHttpServer.memoryToolkitRegistration.pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
     Layer.provide(
       Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({
         capabilities: () => Effect.succeed({ providers: [] } as never),
@@ -194,7 +194,7 @@ it.effect(
           { scope: "all", mode: "skip", reason: "User request" },
         ]) {
           const error = yield* Effect.flip(callTool("ged_review_policy_set", args));
-          expect(error._tag).toBe("InvalidParams");
+          expect(error).toBeInstanceOf(McpSchema.InvalidParams);
         }
         const listed = yield* callTool("ged_memory_list", {});
         expect(listed.isError).not.toBe(true);

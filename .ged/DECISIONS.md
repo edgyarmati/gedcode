@@ -745,3 +745,31 @@ exceptions preserve both the legacy and current literals. A frozen v0.5.3 fixtur
 and the explicit upgrade path independently of the generated current gate. macOS test fixtures
 canonicalize temporary paths when modeling Git or a CLI's real working directory; deliberate
 registry aliases remain lexical.
+
+## 2026-11-14 — Integrate upstream through 756545a917
+
+Merge upstream `756545a917` (2,415 commits since `30084f0018`) on a worktree branch and release it as
+0.7.0. Merge, not rebase: the Ged layer stays additive, and `.ged/STANDARDS.md` remains the complete
+list of modified upstream files. The sync-upstream skill now describes this flow.
+
+Upstream replaced the first-run wizard with `WelcomePage.tsx`. That file is a new identity seam: it
+is branded GedCode, and its phone section needs T3 cloud config, which Ged builds lack, so it never
+renders. Further new seams carry Ged's names: `serviceLauncher.ts` names the OS services, and the
+web `vite.config.ts` sets the page title. `settingsSearch.ts` drops the mobile app item, and
+`MobileAppSettingsRow.tsx` is deleted. Translations hold only settings labels, so they need no
+identity edits.
+
+Upstream's Effect language-service bump makes several diagnostics errors. Ged's error classes are
+now `Schema.TaggedError`, and Ged JSON goes through `Schema.fromJsonString` codecs instead of
+`JSON.stringify`. The verdict record keeps two-space indentation because people read and edit it.
+MCP handlers now carry `McpRequest` requirement markers that `Layer.provide` cannot discharge, so
+in-process MCP tests must build the server through `McpHttpServer.layerInProcessMcpServer`.
+
+The ORCHESTRATION.md §2 inventory was re-verified against this upstream and still holds.
+`clientRequestId`, shared/worktree isolation that leaves out uncommitted edits, remote rejection of
+worktree isolation, the `next` field, wait timeouts that leave the child running and the 4,000-byte
+Codex entry cap are all unchanged.
+
+Upstream added three workflows that cannot run here: Issue Vouch, Mobile dev client (it needs
+Blacksmith runners and T3 secrets) and PR Limits. Disable them right after pushing main instead of
+deleting the files. T3 Connect stays unavailable.

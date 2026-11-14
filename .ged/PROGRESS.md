@@ -602,3 +602,12 @@ Round 11: Codex passed; Opus found the `<!--` refusal blind inside loader argume
 skipped specifier subtrees outright, so `require(a<!--b,`...`)` let a binding be rebranded. The walk
 now descends into every subtree and only marks specifier ones as not rewritable. Test failed first;
 real staging is byte-identical (56 files).
+
+## 2026-11-14 — Upstream integration for 0.7.0
+
+Merged upstream `756545a917` on `integrate-upstream-20261114`. Resolved seams and Effect diagnostics
+are listed in DECISIONS. Server, desktop, web, contracts, client-runtime, provider-core, shared and
+scripts typecheck clean. Focused suites pass: server Ged, memory and v0.4 import (82); desktop
+electron (54, 1 skipped); Codex instructions and context budget (7). Translations need no edits.
+Release notes are in `docs/ged/releases/0.7.0.md`. Pending: the identity audit, `check:changed`,
+a desktop build, two independent reviews, landing, workflow disablement and the v0.7.0 tag.

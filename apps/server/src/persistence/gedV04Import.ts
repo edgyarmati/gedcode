@@ -213,13 +213,17 @@ export const upgradeGedV04Database = Effect.fn("upgradeGedV04Database")(
               directory: path.dirname(databasePath),
               prefix: "ged-v04-recovery-",
             });
-            yield* Effect.tryPromise(async () => {
-              const source = new NodeSqlite.DatabaseSync(databasePath, { readOnly: true });
-              try {
-                await NodeSqlite.backup(source, path.join(directory, "statev2.sqlite"));
-              } finally {
-                source.close();
-              }
+            yield* Effect.tryPromise({
+              try: async () => {
+                const source = new NodeSqlite.DatabaseSync(databasePath, { readOnly: true });
+                try {
+                  await NodeSqlite.backup(source, path.join(directory, "statev2.sqlite"));
+                } finally {
+                  source.close();
+                }
+              },
+              catch: (cause) =>
+                new GedV04UpgradeError({ databasePath, reason: "database-operation", cause }),
             });
           }
           // Migration 23 historically swallowed ALTER errors. Validate its result explicitly,
