@@ -296,25 +296,26 @@ const replaceCheckedJavaScript = Effect.fn("replaceCheckedJavaScript")(function*
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  // Same directory and extension, so Node picks the module format it will load the file with.
-  const candidate = path.join(path.dirname(file), `.ged-rebrand-${path.basename(file)}`);
-  yield* Effect.gen(function* () {
-    yield* fs.writeFileString(candidate, contents);
-    const [exitCode, stderr] = yield* Effect.scoped(
-      Effect.flatMap(
-        spawner.spawn(ChildProcess.make(process.execPath, ["--check", candidate])),
-        (child) =>
-          Effect.all([child.exitCode, Stream.mkString(Stream.decodeText(child.stderr))], {
-            concurrency: "unbounded",
-          }),
-      ),
-    );
-    if (exitCode !== 0) {
-      return yield* new StagedBundleParseError({ file, reason: stderr.trim() });
-    }
-    yield* fs.rename(candidate, file);
-  }).pipe(Effect.ensuring(Effect.ignore(fs.remove(candidate, { force: true }))));
-});
+  // A fresh sibling directory keeps the extension and nearest package.json, so Node picks the
+  // module format it will load the file with, and cleanup can only touch what staging created.
+  const scratch = yield* fs.makeTempDirectoryScoped({
+    directory: path.dirname(file),
+    prefix: ".ged-rebrand-",
+  });
+  const candidate = path.join(scratch, path.basename(file));
+  yield* fs.writeFileString(candidate, contents);
+  const [exitCode, stderr] = yield* Effect.flatMap(
+    spawner.spawn(ChildProcess.make(process.execPath, ["--check", candidate])),
+    (child) =>
+      Effect.all([child.exitCode, Stream.mkString(Stream.decodeText(child.stderr))], {
+        concurrency: "unbounded",
+      }),
+  );
+  if (exitCode !== 0) {
+    return yield* new StagedBundleParseError({ file, reason: stderr.trim() });
+  }
+  yield* fs.rename(candidate, file);
+}, Effect.scoped);
 
 /**
  * Rewrites the product name in the staged bundles' text files (not their

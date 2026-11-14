@@ -212,6 +212,9 @@ describe("GedCode identity", () => {
           '\uFEFFexport const bom="T3 Code";',
         );
         yield* fs.writeFileString(path.join(root, "client/assets/logo.png"), "T3 Code");
+        // Shaped like a scratch name staging could pick; it must survive untouched.
+        const bystander = "export const unrelated=42;";
+        yield* fs.writeFileString(path.join(root, "client/assets/.ged-rebrand-app.mjs"), bystander);
         yield* fs.writeFileString(path.join(root, "node_modules/dep/index.js"), "T3 Code");
 
         const changed = yield* rebrandStagedBundles([root]);
@@ -257,6 +260,10 @@ describe("GedCode identity", () => {
           [...new TextEncoder().encode('\uFEFFexport const bom="GedCode";')],
         );
         assert.equal(
+          yield* fs.readFileString(path.join(root, "client/assets/.ged-rebrand-app.mjs")),
+          bystander,
+        );
+        assert.equal(
           yield* fs.readFileString(path.join(root, "client/assets/logo.png")),
           "T3 Code",
         );
@@ -281,12 +288,17 @@ describe("GedCode identity", () => {
       ] as const) {
         const root = yield* fs.makeTempDirectoryScoped();
         yield* fs.writeFileString(path.join(root, name), source);
+        yield* fs.writeFileString(path.join(root, `.ged-rebrand-${name}`), "export {};");
 
         const error = yield* Effect.flip(rebrandStagedBundles([root]));
 
         assert.include(String(error), name);
-        assert.deepEqual(yield* fs.readDirectory(root), [name]);
+        assert.sameMembers(yield* fs.readDirectory(root), [name, `.ged-rebrand-${name}`]);
         assert.equal(yield* fs.readFileString(path.join(root, name)), source);
+        assert.equal(
+          yield* fs.readFileString(path.join(root, `.ged-rebrand-${name}`)),
+          "export {};",
+        );
       }
       // A lossy decode would turn the invalid byte into U+FFFD and write that back.
       const invalid = Uint8Array.of(...new TextEncoder().encode('const name="T3 Code";//'), 0xff);

@@ -565,3 +565,10 @@ not valid UTF-8 now fails staging. It also flagged that the round-5 criteria ove
 "no parse errors" (sloppy octals are tolerated by design) and "exactly as before" (a BOM is now
 kept), so round 7's criteria state the intended invariants. Tests failed first; real staging is
 byte-identical to d5aa782a3 (56 files).
+
+A seventh review of 040e9224d..9f66b05e6 met every criterion except one: the Node check wrote its
+candidate to a fixed sibling name, so a staged file already called `.ged-rebrand-<name>` was
+overwritten and then removed. The candidate now lives in a fresh `mkdtemp` directory beside the
+file (same extension and nearest package.json, so the same module format), and cleanup removes
+only that directory. The test fixtures plant such a bystander and failed first; real staging is
+unchanged (56 files).
