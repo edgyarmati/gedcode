@@ -534,3 +534,8 @@ and rewriting dropped a UTF-8 byte-order mark. The computed key is now unwrapped
 JavaScript file is parsed (996 real files, 62 MB, in about 3 s, with no diagnostics), and files are
 decoded with the BOM kept. Tests were extended first and failed; real staging still rebrands 56
 files with every changed file passing `node --check`.
+
+A third review of 040e9224d..aa87bee9a failed only on comma-sequenced callees: `(0, require)(…)`
+and `(0, require.resolve)(…)` had their specifiers rebranded. Callee unwrapping now follows the
+right operand of comma expressions; the test fixture covers both forms (failing first), and real
+staging is unchanged (56 files, all passing `node --check`).

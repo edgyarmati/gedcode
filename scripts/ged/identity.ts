@@ -171,15 +171,21 @@ export function applyGedStagePackageIdentity<T extends { readonly build: Json }>
 const TEXT_EXTENSIONS = new Set([".js", ".cjs", ".mjs", ".html", ".json", ".webmanifest", ".txt"]);
 const JAVASCRIPT_EXTENSIONS = new Set([".js", ".cjs", ".mjs"]);
 
-const unwrap = (node: ts.Expression): ts.Expression =>
-  ts.isParenthesizedExpression(node) ? unwrap(node.expression) : node;
+/** Strips parentheses and comma sequences, so `(0, require)` resolves to `require`. */
+const unwrap = (node: ts.Expression): ts.Expression => {
+  if (ts.isParenthesizedExpression(node)) return unwrap(node.expression);
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.CommaToken) {
+    return unwrap(node.right);
+  }
+  return node;
+};
 
 const isRequire = (node: ts.Expression): boolean => {
   const callee = unwrap(node);
   return ts.isIdentifier(callee) && callee.text === "require";
 };
 
-/** `import(...)`, `require(...)` and `require.resolve(...)`, however parenthesized. */
+/** `import(...)`, `require(...)` and `require.resolve(...)`, however parenthesized or sequenced. */
 const isModuleCall = (node: ts.CallExpression): boolean => {
   const callee = unwrap(node.expression);
   if (callee.kind === ts.SyntaxKind.ImportKeyword || isRequire(callee)) return true;

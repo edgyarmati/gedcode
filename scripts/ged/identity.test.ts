@@ -179,6 +179,7 @@ describe("GedCode identity", () => {
           'export const resolved=()=>require.resolve(`./T3 Code${""}.cjs`);',
           'export const wrapped=()=>[(require)("./T3 Code.cjs"),(require.resolve)("./T3 Code.cjs")];',
           'export const computed=()=>[(require)["resolve"]("./T3 Code.cjs"),require[("resolve")]("./T3 Code.cjs")];',
+          'export const sequenced=()=>[(0,require)("./T3 Code.cjs"),(0,require.resolve)("./T3 Code.cjs"),(0,(0,require))["resolve"]("./T3 Code.cjs")];',
           'const T3="ArrowRight",t3=2;',
           "export {T3 as si,t3 as cli};",
           'export const name="T3 Code (Beta)";',
