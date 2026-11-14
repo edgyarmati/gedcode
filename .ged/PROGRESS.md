@@ -618,4 +618,8 @@ which pass on a case-sensitive volume. A local `dist:desktop:artifact` 0.7.0 bui
 and zip with `com.gedcode.app`, the GedCode Sparkle feed and key and the `gedcode` scheme; all 1,011
 packaged JS bundles pass `node --check`, and the packaged CLI reports `gedcode v0.7.0` and writes
 `gedcode.*` policy templates. Upstream's resource monitor needs rustc 1.95 or later; CI installs
-stable. Pending: two independent reviews, landing, workflow disablement and the v0.7.0 tag.
+stable. The first review round (Codex gpt-6.1-sol, Opus) failed one criterion: `gedcode install` and
+the SSH download failure pointed at T3's installer. Both now give GedCode's own guidance, and a
+guard test fails if any shipped source names T3's installer. A frozen 0.6.1 gate fixture and a
+non-T3 new-thread link row close the two test gaps Opus found. Pending: the second review round,
+landing, workflow disablement and the v0.7.0 tag.

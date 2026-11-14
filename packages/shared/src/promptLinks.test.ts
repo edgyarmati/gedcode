@@ -101,6 +101,9 @@ describe("link round trips", () => {
       model: "opus",
     });
     expect(link).toMatch(/^gedcode:\/\/new\?/);
+    expect(buildNewThreadLink({ prompt: "hi", origin: "https://code.example.com" })).toBe(
+      "https://code.example.com/new?prompt=hi",
+    );
     const path = promptLinkAppPath(link);
     expect(path).toBe(`/new${new URL(link).search}`);
     const parsed = parseNewThreadLink(new URL(link).search);

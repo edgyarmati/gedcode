@@ -788,10 +788,20 @@ lists the locations. Upstream's guide is left unedited.
 The land gate accepts every built-in provider's driver kind, including fx, Kiro and Antigravity, and
 a test pins the list to `BUILT_IN_DRIVERS`. The gate released through 0.6 is kept as the
 `CROSS_VENDOR_LAND_GATE` fingerprint, so projects that installed it are offered the upgrade instead of
-being treated as custom.
+being treated as custom. A frozen copy of the 0.6.1 gate in the server's Ged fixtures pins that.
+
+GedCode publishes no install script and no standalone CLI archives, so nothing may send a user to
+T3's installer (`t3.codes/install`), which installs T3 Code. `gedcode install` points at Settings in
+the desktop app, and the SSH runner's download failure only names the URL it tried. A test in
+`scripts/ged/identity.test.ts` fails when any shipped source names the installer. Two files are
+allowed because GedCode never shows them: the hosted-only setup steps and the service preflight. The
+preflight runs only inside a downloaded CLI archive. If GedCode ever publishes archives and an
+installer, point all of them at it.
 
 check:changed on a default Mac fails five upstream tests for environmental reasons: the `/var` →
 `/private/var` temp-directory symlink (AgentSessionScanner, ManagedProjectFolders) and the
 case-insensitive filesystem (ClaudeSkills `PSTACK`, DesktopLinuxUrlHandler icon spellings). Ged CI
 does not run them. To check them locally, point `TMPDIR` at a directory on a case-sensitive APFS
-image with no symlink in its path; all five pass there.
+image with no symlink in its path; all five pass there. Two `packages/ssh` tunnel tests also fail
+only on a Mac. The gzip test expects GNU tar, but bsdtar unpacks gzip without `gzip`. The concurrent-launch
+test passes but takes longer than the 5-second test timeout on a Mac.

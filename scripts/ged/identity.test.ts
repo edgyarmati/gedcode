@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import * as NodeChildProcess from "node:child_process";
 import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -344,4 +345,38 @@ describe("GedCode identity", () => {
       assert.equal(yield* rebrandStagedBundles([root]), 0);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
+});
+
+/** Shipped sources that may still name T3's installer, because GedCode never shows them. */
+const UNREACHABLE_T3_INSTALLER_GUIDANCE = [
+  // Only a hosted (app.t3.codes) deployment renders it; GedCode serves no hosted web app.
+  "apps/web/src/components/InstallT3Commands.tsx",
+  // Runs inside a runtime downloaded from a CLI archive, and GedCode publishes none.
+  "apps/server/src/cloud/servicePreflight.ts",
+];
+
+describe("GedCode installer guidance", () => {
+  it("never sends a user to T3's installer", () => {
+    const repoRoot = NodeURL.fileURLToPath(new URL("../..", import.meta.url));
+    const listed = NodeChildProcess.execFileSync(
+      "git",
+      [
+        "grep",
+        "-l",
+        "-F",
+        "t3.codes/install",
+        "--",
+        ":(glob)apps/*/src/**",
+        ":(glob)packages/*/src/**",
+        // T3's own website; GedCode does not ship it.
+        ":(exclude)apps/marketing",
+        ":(exclude,glob)**/*.test.*",
+      ],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    assert.deepStrictEqual(
+      listed.split("\n").filter(Boolean).toSorted(),
+      UNREACHABLE_T3_INSTALLER_GUIDANCE.toSorted(),
+    );
+  });
 });

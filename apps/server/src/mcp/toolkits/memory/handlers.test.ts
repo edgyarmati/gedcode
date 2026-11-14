@@ -16,12 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
-import {
-  CROSS_VENDOR_LAND_GATE,
-  LAND_GATE,
-  LEGACY_LAND_GATE,
-  OPT_OUT_LAND_GATE,
-} from "../../../ged/starter/landGate.ts";
+import { LAND_GATE, LEGACY_LAND_GATE, OPT_OUT_LAND_GATE } from "../../../ged/starter/landGate.ts";
 import * as GedSetup from "../../../ged/GedSetup.ts";
 import * as GedSetupOffers from "../../../ged/GedSetupOffers.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
@@ -712,6 +707,7 @@ it.effect(
     withCheckout((root) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
         const gate = `${root}/.ged/bin/land-gate.sh`;
         yield* fs.writeFileString(gate, LEGACY_LAND_GATE);
         git(root, "add", "-A");
@@ -746,8 +742,13 @@ it.effect(
           applied: true,
         });
         expect(yield* fs.readFileString(gate)).toBe(LAND_GATE);
-        // So is the gate released before it accepted every built-in provider.
-        yield* fs.writeFileString(gate, CROSS_VENDOR_LAND_GATE);
+        // So is the gate released through 0.6, before it accepted every built-in provider.
+        yield* fs.writeFileString(
+          gate,
+          yield* fs.readFileString(
+            path.join(import.meta.dirname, "../../../ged/fixtures/stockGateV061.sh"),
+          ),
+        );
         expect(yield* policy(root)).toMatchObject({ gate: "legacy", gateSupportsOptOut: true });
         expect(yield* call(root, "ged_review_gate_update", { apply: true })).toEqual({
           status: "current",
