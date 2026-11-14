@@ -181,6 +181,7 @@ describe("GedCode identity", () => {
           'export const computed=()=>[(require)["resolve"]("./T3 Code.cjs"),require[("resolve")]("./T3 Code.cjs")];',
           'export const sequenced=()=>[(0,require)("./T3 Code.cjs"),(0,require.resolve)("./T3 Code.cjs"),(0,(0,require))["resolve"]("./T3 Code.cjs")];',
           'export const announced=()=>(globalThis.shown="T3 Code",require)("node:path");',
+          'export const keyed=()=>[require["res"+"olve"]("./T3 Code.cjs"),import.meta.resolve("./T3 Code.mjs")];',
           'const T3="ArrowRight",t3=2;',
           "export {T3 as si,t3 as cli};",
           'export const name="T3 Code (Beta)";',
@@ -190,9 +191,12 @@ describe("GedCode identity", () => {
           "export const matcher=/T3 as t3/;",
           "// T3 Code: T3 as t3",
         ].join("\n");
-        for (const extension of ["js", "cjs", "mjs"]) {
+        // Sloppy-mode octal escapes are valid CommonJS that TypeScript's parser reports.
+        const commonjs = 'var reset="\\033[0m T3 Code";exports.load=()=>require("./T3 Code.cjs");';
+        for (const extension of ["js", "mjs"]) {
           yield* fs.writeFileString(path.join(root, `client/assets/app.${extension}`), javascript);
         }
+        yield* fs.writeFileString(path.join(root, "client/assets/app.cjs"), commonjs);
         yield* fs.writeFileString(
           path.join(root, "client/assets/T3 Code.mjs"),
           'const value=7;export {value as "T3 Code"};',
@@ -215,7 +219,11 @@ describe("GedCode identity", () => {
           yield* fs.readFileString(path.join(root, "client/index.html")),
           "<title>GedCode</title>",
         );
-        for (const extension of ["js", "cjs", "mjs"]) {
+        assert.equal(
+          yield* fs.readFileString(path.join(root, "client/assets/app.cjs")),
+          commonjs.replace("[0m T3 Code", "[0m GedCode"),
+        );
+        for (const extension of ["js", "mjs"]) {
           assert.equal(
             yield* fs.readFileString(path.join(root, `client/assets/app.${extension}`)),
             javascript
@@ -257,24 +265,30 @@ describe("GedCode identity", () => {
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("refuses to rebrand JavaScript it cannot parse", () =>
+  it.effect("refuses rewrites it cannot parse or Node cannot load", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      // Annex B HTML comments are valid script syntax the parser does not support.
-      for (const source of [
-        'const name="T3 Code";\n<!-- "T3 Code"\n',
-        "const =;",
-        'const name="T3 Code";const pattern=/(/;',
-      ]) {
+      for (const [name, source] of [
+        // Annex B HTML comments are valid script syntax the TypeScript parser does not support.
+        ["legacy.cjs", 'const name="T3 Code";\n<!-- "T3 Code"\n'],
+        ["app.mjs", 'export const name="T3 Code";export {missing};'],
+        ["app.mjs", 'export const name="T3 Code";export const load=()=>import(/(/);'],
+        ["app.cjs", 'const name="T3 Code";const pending;'],
+        ["app.js", 'const name="T3 Code";const view=<p>T3 Code</p>;'],
+      ] as const) {
         const root = yield* fs.makeTempDirectoryScoped();
-        yield* fs.writeFileString(path.join(root, "legacy.cjs"), source);
+        yield* fs.writeFileString(path.join(root, name), source);
 
         const error = yield* Effect.flip(rebrandStagedBundles([root]));
 
-        assert.include(String(error), "legacy.cjs");
-        assert.equal(yield* fs.readFileString(path.join(root, "legacy.cjs")), source);
+        assert.include(String(error), name);
+        assert.deepEqual(yield* fs.readDirectory(root), [name]);
+        assert.equal(yield* fs.readFileString(path.join(root, name)), source);
       }
+      const root = yield* fs.makeTempDirectoryScoped();
+      yield* fs.writeFileString(path.join(root, "vendor.js"), "const =;");
+      assert.equal(yield* rebrandStagedBundles([root]), 0);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

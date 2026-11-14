@@ -2,6 +2,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import ts from "typescript-legacy";
 
 /** Rebrand staged bundles rather than editing upstream's user-visible strings.
@@ -73,7 +75,9 @@ const PROSE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
 function rebrandPrefix(text: string, end: number): string {
   for (const [pattern, to] of [...PRODUCT_NAME_REPLACEMENTS, ...PROSE_RULES]) {
     let delta = 0;
-    const replace = (match: string, offset: number): string => {
+    // Capture groups precede the offset argument; it is the first number.
+    const replace = (match: string, ...rest: ReadonlyArray<unknown>): string => {
+      const offset = rest.find((value): value is number => typeof value === "number") ?? 0;
       if (offset + match.length > end) return match;
       delta += to.length - match.length;
       return to;
@@ -180,28 +184,28 @@ const unwrap = (node: ts.Expression): ts.Expression => {
   return node;
 };
 
-const isRequire = (node: ts.Expression): boolean => {
-  const callee = unwrap(node);
-  return ts.isIdentifier(callee) && callee.text === "require";
+const isNamed = (node: ts.Expression, name: string): boolean => {
+  const target = unwrap(node);
+  return ts.isIdentifier(target) && target.text === name;
 };
 
-/** `import(...)`, `require(...)` and `require.resolve(...)`, however parenthesized or sequenced. */
+/**
+ * Calls whose first argument names a module: `import()`, and anything called through `require` or
+ * `import.meta`. Member keys are not evaluated, so `require[key](...)` counts whatever `key` is.
+ */
 const isModuleCall = (node: ts.CallExpression): boolean => {
   const callee = unwrap(node.expression);
-  if (callee.kind === ts.SyntaxKind.ImportKeyword || isRequire(callee)) return true;
-  if (ts.isPropertyAccessExpression(callee)) {
-    return isRequire(callee.expression) && callee.name.text === "resolve";
-  }
-  if (!ts.isElementAccessExpression(callee) || !isRequire(callee.expression)) return false;
-  const key = unwrap(callee.argumentExpression);
-  return ts.isStringLiteralLike(key) && key.text === "resolve";
+  if (callee.kind === ts.SyntaxKind.ImportKeyword || isNamed(callee, "require")) return true;
+  if (!ts.isPropertyAccessExpression(callee) && !ts.isElementAccessExpression(callee)) return false;
+  const target = unwrap(callee.expression);
+  return (
+    isNamed(target, "require") ||
+    (ts.isMetaProperty(target) && target.keywordToken === ts.SyntaxKind.ImportKeyword)
+  );
 };
 
-/** Throws on a body the parser accepts but V8 rejects when the module loads, such as `/(/`. */
-const compileRegularExpression = (literal: string): RegExp => {
-  const flagsStart = literal.lastIndexOf("/");
-  return new RegExp(literal.slice(1, flagsStart), literal.slice(flagsStart + 1));
-};
+// Sloppy-mode octals are legal in scripts and leave token boundaries intact; Node judges the output.
+const TOLERATED_DIAGNOSTICS = new Set([1121, 1487]);
 
 export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParseError>()(
   "StagedBundleParseError",
@@ -213,6 +217,7 @@ export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParse
 }
 
 function rebrandJavaScript(source: string): string {
+  if (rebrandText(source) === source) return source;
   const module = ts.createSourceFile(
     "bundle.js",
     source,
@@ -224,11 +229,10 @@ function rebrandJavaScript(source: string): string {
   const { parseDiagnostics } = module as unknown as {
     readonly parseDiagnostics: ReadonlyArray<ts.Diagnostic>;
   };
-  const [diagnostic] = parseDiagnostics;
+  const diagnostic = parseDiagnostics.find(({ code }) => !TOLERATED_DIAGNOSTICS.has(code));
   if (diagnostic !== undefined) {
     throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
   }
-  const brandable = rebrandText(source) !== source;
   const parts: string[] = [];
   let offset = 0;
   const visit = (node: ts.Node, parent?: ts.Node, templateEnd?: number): void => {
@@ -241,13 +245,11 @@ function rebrandJavaScript(source: string): string {
         ts.isExportSpecifier(parent) ||
         (ts.isCallExpression(parent) && node === parent.arguments[0] && isModuleCall(parent)));
     if (moduleSyntax) return;
-    if (ts.isRegularExpressionLiteral(node)) compileRegularExpression(node.text);
     if (
-      brandable &&
-      (ts.isStringLiteralLike(node) ||
-        ts.isTemplateHead(node) ||
-        ts.isTemplateMiddle(node) ||
-        ts.isTemplateTail(node))
+      ts.isStringLiteralLike(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
     ) {
       const start = node.getStart(module);
       const original = source.slice(start, node.end);
@@ -267,6 +269,34 @@ function rebrandJavaScript(source: string): string {
   parts.push(source.slice(offset));
   return parts.join("");
 }
+
+/** Replaces `file` only if Node's own parser accepts the rewrite, which TypeScript's cannot promise. */
+const replaceCheckedJavaScript = Effect.fn("replaceCheckedJavaScript")(function* (
+  file: string,
+  contents: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  // Same directory and extension, so Node picks the module format it will load the file with.
+  const candidate = path.join(path.dirname(file), `.ged-rebrand-${path.basename(file)}`);
+  yield* Effect.gen(function* () {
+    yield* fs.writeFileString(candidate, contents);
+    const [exitCode, stderr] = yield* Effect.scoped(
+      Effect.flatMap(
+        spawner.spawn(ChildProcess.make(process.execPath, ["--check", candidate])),
+        (child) =>
+          Effect.all([child.exitCode, Stream.mkString(Stream.decodeText(child.stderr))], {
+            concurrency: "unbounded",
+          }),
+      ),
+    );
+    if (exitCode !== 0) {
+      return yield* new StagedBundleParseError({ file, reason: stderr.trim() });
+    }
+    yield* fs.rename(candidate, file);
+  }).pipe(Effect.ensuring(Effect.ignore(fs.remove(candidate, { force: true }))));
+});
 
 /**
  * Rewrites the product name in the staged bundles' text files (not their
@@ -300,10 +330,13 @@ export const rebrandStagedBundles = Effect.fn("rebrandStagedBundles")(function* 
               }),
           })
         : rebrandText(original);
-      if (rebranded !== original) {
+      if (rebranded === original) continue;
+      if (JAVASCRIPT_EXTENSIONS.has(path.extname(entry))) {
+        yield* replaceCheckedJavaScript(file, rebranded);
+      } else {
         yield* fs.writeFileString(file, rebranded);
-        changed += 1;
       }
+      changed += 1;
     }
   }
   return changed;

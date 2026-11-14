@@ -545,3 +545,13 @@ callee (`(log("T3 Code"), require)(…)`) was skipped with the specifier, and an
 (`/(/`) was rewritten because the parser does not check regex bodies. Only the specifier argument
 is now excluded, and every regex literal is compiled, so such a file fails staging. Both cases
 failed first; real staging still rebrands 56 files, all passing `node --check`.
+
+A fifth review of 040e9224d..a296263f1 found more constructed cases: computed keys such as
+`require["res"+"olve"]`, and invalid input TypeScript's parser accepts (`const x;`, JSX, a bad regex
+inside `import()`). Rather than chase each, staging now skips the first argument of every call
+through `require` or `import.meta`, and every rewritten file must pass `node --check` before it
+replaces the original; the hand-written regex check is gone. Files with no product-name match are
+neither parsed nor judged, which also stops vendored sloppy-mode octals from failing the build
+(raised by a separate Opus review). The review criterion moved from "reject any invalid
+JavaScript" to "never write a file Node would refuse to load", the guarantee that matters for
+0.6.0's failure. Real staging output is byte-identical to a296263f1 (56 files) in about 6 s.

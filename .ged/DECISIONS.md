@@ -454,9 +454,12 @@ JavaScript staging applies these rules only to parsed string and template litera
 can name a binding `T3`; rewriting code such as `export {T3 as si}` breaks module loading, as in
 0.6.0. Literal ranges are replaced in the original source so code, escapes and template expressions
 retain their syntax; module specifiers (including parenthesized, comma-sequenced and computed `require`) and quoted
-import/export bindings are excluded. Every staged JavaScript file is parsed and its regex literals compiled, and one
-that fails either check fails staging rather than being rewritten from a recovered tree (about 3 s for a
-full build). Template
+import/export bindings are excluded, as is the first argument of `import()` and of any call made
+through `require` or `import.meta` (member keys are not evaluated). Only files with a product-name
+match are touched. Such a file is rewritten only from a TypeScript parse with no errors (sloppy-mode
+octals excepted), and the result replaces the original only if `node --check` accepts it, so
+staging can never write a file Node would refuse to load. Files without a match are not judged:
+they ship as the build produced them. Template
 rules can inspect following interpolations without rewriting them, preserving version hints such
 as `t3@${version}`. Non-JavaScript text and build configuration use the prose rules directly.
 
