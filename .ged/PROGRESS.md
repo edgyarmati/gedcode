@@ -572,3 +572,12 @@ overwritten and then removed. The candidate now lives in a fresh `mkdtemp` direc
 file (same extension and nearest package.json, so the same module format), and cleanup removes
 only that directory. The test fixtures plant such a bystander and failed first; real staging is
 unchanged (56 files).
+
+Round 8 passed Codex. A second fresh review (Opus, required for an important change) failed it: in
+a CommonJS script, `a<!--b,` + backtick starts a comment for Node but a template for TypeScript, so
+code on the following line was rebranded and `node --check` still accepted it. Files where
+TypeScript reads `<!--` as code are now refused. The same review found that the rename dropped a
+file's mode (latent: no executable entry point contains the product name), now carried over. It
+also measured quadratic cost on huge templates (400 KB, 5,000 placeholders: about 13 s); accepted,
+since real staging takes about 6 s and bounding the context would tie it to today's lookaheads.
+Tests failed first; real staging is byte-identical (56 files).

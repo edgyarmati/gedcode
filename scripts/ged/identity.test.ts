@@ -217,6 +217,8 @@ describe("GedCode identity", () => {
         yield* fs.writeFileString(path.join(root, "client/assets/.ged-rebrand-app.mjs"), bystander);
         yield* fs.writeFileString(path.join(root, "node_modules/dep/index.js"), "T3 Code");
 
+        yield* fs.chmod(path.join(root, "client/assets/app.mjs"), 0o755);
+
         const changed = yield* rebrandStagedBundles([root]);
 
         assert.equal(changed, 5);
@@ -241,6 +243,10 @@ describe("GedCode identity", () => {
               .replace("; T3 browser`", "; GedCode browser`"),
           );
         }
+        assert.equal(
+          (yield* fs.stat(path.join(root, "client/assets/app.mjs"))).mode & 0o777,
+          0o755,
+        );
         const module = yield* Effect.promise(
           () => import(NodeURL.pathToFileURL(path.join(root, "client/assets/app.mjs")).href),
         );
@@ -281,6 +287,9 @@ describe("GedCode identity", () => {
       for (const [name, source] of [
         // Annex B HTML comments are valid script syntax the TypeScript parser does not support.
         ["legacy.cjs", 'const name="T3 Code";\n<!-- "T3 Code"\n'],
+        // Scripts end the line at `<!--`; TypeScript reads `a < !--b` and a template over the code.
+        ["comment.cjs", 'var a=1,b=2;a<!--b,`\nvar T3=1;exports.n="T3 Code";\n<!--`;\n'],
+        ["shifted.cjs", 'var a=1,b=2;a<<!--b;"T3 Code"\n'],
         ["app.mjs", 'export const name="T3 Code";export {missing};'],
         ["app.mjs", 'export const name="T3 Code";export const load=()=>import(/(/);'],
         ["app.cjs", 'const name="T3 Code";const pending;'],
@@ -293,6 +302,7 @@ describe("GedCode identity", () => {
         const error = yield* Effect.flip(rebrandStagedBundles([root]));
 
         assert.include(String(error), name);
+        if (source.includes("<!--b")) assert.include(String(error), "parses as code");
         assert.sameMembers(yield* fs.readDirectory(root), [name, `.ged-rebrand-${name}`]);
         assert.equal(yield* fs.readFileString(path.join(root, name)), source);
         assert.equal(

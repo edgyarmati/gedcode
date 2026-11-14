@@ -215,6 +215,22 @@ const loadsModules = (node: ts.Expression): boolean => {
 // Sloppy-mode octals are legal in scripts and leave token boundaries intact; Node judges the output.
 const TOLERATED_DIAGNOSTICS = new Set([1121, 1487]);
 
+/**
+ * Whether TypeScript reads `<!--` as code (`a < !--b`). Scripts read it as a line comment, the one
+ * Annex B syntax that moves token boundaries, so literal ranges would no longer match Node's.
+ * The script form of `-->` always fails TypeScript's parse instead.
+ */
+const readsHtmlCommentAsCode = (module: ts.SourceFile): boolean => {
+  const visit = (node: ts.Node): boolean => {
+    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+      const start = node.getStart(module);
+      if (module.text[start - 1] === "<" && module.text.startsWith("!--", start)) return true;
+    }
+    return ts.forEachChild(node, visit) ?? false;
+  };
+  return visit(module);
+};
+
 export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParseError>()(
   "StagedBundleParseError",
   { file: Schema.String, reason: Schema.String },
@@ -239,6 +255,9 @@ function rebrandJavaScript(source: string): string {
   const diagnostic = parseDiagnostics.find(({ code }) => !TOLERATED_DIAGNOSTICS.has(code));
   if (diagnostic !== undefined) {
     throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
+  }
+  if (readsHtmlCommentAsCode(module)) {
+    throw new Error("`<!--` would be a comment in a script but parses as code");
   }
   const parts: string[] = [];
   let offset = 0;
@@ -304,6 +323,8 @@ const replaceCheckedJavaScript = Effect.fn("replaceCheckedJavaScript")(function*
   });
   const candidate = path.join(scratch, path.basename(file));
   yield* fs.writeFileString(candidate, contents);
+  // The rename replaces the inode, so carry over the mode (executable entry points).
+  yield* fs.chmod(candidate, (yield* fs.stat(file)).mode & 0o7777);
   const [exitCode, stderr] = yield* Effect.flatMap(
     spawner.spawn(ChildProcess.make(process.execPath, ["--check", candidate])),
     (child) =>

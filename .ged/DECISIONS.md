@@ -462,7 +462,11 @@ that needs data-flow analysis; no real bundle specifier contains the product nam
 a product-name match are touched. Such a file must be valid UTF-8 and is rewritten only from a
 TypeScript parse with no errors other than sloppy-mode octals (grammar-only diagnostics), and the
 result replaces the original only if `node --check` accepts it, so staging can never write a file
-Node would refuse to load or bytes it could not decode. Files without a match are not judged:
+Node would refuse to load or bytes it could not decode. Valid output is not enough: TypeScript's
+literal ranges must also be Node's. The one Annex B syntax that moves token boundaries is the
+HTML-like comment, so a file where TypeScript reads `<!--` as code is refused (`-->` already fails
+its parse). Other strings stay text even when code uses them as names, such as
+`new URL("./T3 Code.png", import.meta.url)` or `obj["T3 Code"]`; the builds contain none. Files without a match are not judged:
 they ship as the build produced them. Template
 rules can inspect following interpolations without rewriting them, preserving version hints such
 as `t3@${version}`. Non-JavaScript text and build configuration use the prose rules directly.
