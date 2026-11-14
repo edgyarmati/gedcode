@@ -527,3 +527,10 @@ unwrap parentheses and computed `resolve`, and unparsable JavaScript fails stagi
 were added to the identity tests (failing first). Staging the real local server and desktop
 output rebranded 56 files with no parse failures; every changed file passes `node --check` and
 the `{T3 as …}` export in the utils chunk is preserved.
+
+A second fresh Codex review of 040e9224d..ddd237998 failed three points: `require[("resolve")]`
+still escaped module-call detection, malformed JavaScript with no branding match skipped parsing,
+and rewriting dropped a UTF-8 byte-order mark. The computed key is now unwrapped, every staged
+JavaScript file is parsed (996 real files, 62 MB, in about 3 s, with no diagnostics), and files are
+decoded with the BOM kept. Tests were extended first and failed; real staging still rebrands 56
+files with every changed file passing `node --check`.

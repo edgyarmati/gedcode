@@ -178,7 +178,7 @@ describe("GedCode identity", () => {
           'export const required=()=>require("./T3 Code.cjs");',
           'export const resolved=()=>require.resolve(`./T3 Code${""}.cjs`);',
           'export const wrapped=()=>[(require)("./T3 Code.cjs"),(require.resolve)("./T3 Code.cjs")];',
-          'export const computed=()=>(require)["resolve"]("./T3 Code.cjs");',
+          'export const computed=()=>[(require)["resolve"]("./T3 Code.cjs"),require[("resolve")]("./T3 Code.cjs")];',
           'const T3="ArrowRight",t3=2;',
           "export {T3 as si,t3 as cli};",
           'export const name="T3 Code (Beta)";',
@@ -195,13 +195,20 @@ describe("GedCode identity", () => {
           path.join(root, "client/assets/T3 Code.mjs"),
           'const value=7;export {value as "T3 Code"};',
         );
-        yield* fs.writeFileString(path.join(root, "client/assets/plain.js"), "no product name");
+        yield* fs.writeFileString(
+          path.join(root, "client/assets/plain.js"),
+          'export const plain="no product name";',
+        );
+        yield* fs.writeFileString(
+          path.join(root, "client/assets/bom.js"),
+          '\uFEFFexport const bom="T3 Code";',
+        );
         yield* fs.writeFileString(path.join(root, "client/assets/logo.png"), "T3 Code");
         yield* fs.writeFileString(path.join(root, "node_modules/dep/index.js"), "T3 Code");
 
         const changed = yield* rebrandStagedBundles([root]);
 
-        assert.equal(changed, 4);
+        assert.equal(changed, 5);
         assert.equal(
           yield* fs.readFileString(path.join(root, "client/index.html")),
           "<title>GedCode</title>",
@@ -232,6 +239,10 @@ describe("GedCode identity", () => {
           module.label,
           "GedCode: ArrowRight; GedCode server GedCode thread; GedCode browser",
         );
+        assert.deepEqual(
+          [...(yield* fs.readFile(path.join(root, "client/assets/bom.js")))],
+          [...new TextEncoder().encode('\uFEFFexport const bom="GedCode";')],
+        );
         assert.equal(
           yield* fs.readFileString(path.join(root, "client/assets/logo.png")),
           "T3 Code",
@@ -247,15 +258,16 @@ describe("GedCode identity", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped();
       // Annex B HTML comments are valid script syntax the parser does not support.
-      const source = 'const name="T3 Code";\n<!-- "T3 Code"\n';
-      yield* fs.writeFileString(path.join(root, "legacy.cjs"), source);
+      for (const source of ['const name="T3 Code";\n<!-- "T3 Code"\n', "const =;"]) {
+        const root = yield* fs.makeTempDirectoryScoped();
+        yield* fs.writeFileString(path.join(root, "legacy.cjs"), source);
 
-      const error = yield* Effect.flip(rebrandStagedBundles([root]));
+        const error = yield* Effect.flip(rebrandStagedBundles([root]));
 
-      assert.include(String(error), "legacy.cjs");
-      assert.equal(yield* fs.readFileString(path.join(root, "legacy.cjs")), source);
+        assert.include(String(error), "legacy.cjs");
+        assert.equal(yield* fs.readFileString(path.join(root, "legacy.cjs")), source);
+      }
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

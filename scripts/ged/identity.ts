@@ -186,12 +186,9 @@ const isModuleCall = (node: ts.CallExpression): boolean => {
   if (ts.isPropertyAccessExpression(callee)) {
     return isRequire(callee.expression) && callee.name.text === "resolve";
   }
-  return (
-    ts.isElementAccessExpression(callee) &&
-    isRequire(callee.expression) &&
-    ts.isStringLiteralLike(callee.argumentExpression) &&
-    callee.argumentExpression.text === "resolve"
-  );
+  if (!ts.isElementAccessExpression(callee) || !isRequire(callee.expression)) return false;
+  const key = unwrap(callee.argumentExpression);
+  return ts.isStringLiteralLike(key) && key.text === "resolve";
 };
 
 export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParseError>()(
@@ -204,7 +201,6 @@ export class StagedBundleParseError extends Schema.TaggedError<StagedBundleParse
 }
 
 function rebrandJavaScript(source: string): string {
-  if (rebrandText(source) === source) return source;
   const module = ts.createSourceFile(
     "bundle.js",
     source,
@@ -220,6 +216,7 @@ function rebrandJavaScript(source: string): string {
   if (diagnostic !== undefined) {
     throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
   }
+  if (rebrandText(source) === source) return source;
   const parts: string[] = [];
   let offset = 0;
   const visit = (node: ts.Node, parent?: ts.Node, templateEnd?: number): void => {
@@ -273,7 +270,10 @@ export const rebrandStagedBundles = Effect.fn("rebrandStagedBundles")(function* 
       if (!TEXT_EXTENSIONS.has(path.extname(entry))) continue;
       const file = path.join(directory, entry);
       if ((yield* fs.stat(file)).type !== "File") continue;
-      const original = yield* fs.readFileString(file);
+      // Keep a byte-order mark; readFileString would drop it.
+      const original = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+        yield* fs.readFile(file),
+      );
       // Minified identifiers can be T3 or t3; only rewrite JavaScript literal text.
       const rebranded = JAVASCRIPT_EXTENSIONS.has(path.extname(entry))
         ? yield* Effect.try({
