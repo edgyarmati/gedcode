@@ -631,5 +631,9 @@ still expected T3's CLI name, home folder, service plist and branch prefix, and 
 two). The first full Linux run then caught the palette search test still expecting the `t3/` branch
 prefix, and the package job stopping at the first failing package; both are fixed. Codex's third round
 found two upstream tests still canonicalizing macOS temp paths, the same drift as the provider tests;
-they are back to upstream's, and DECISIONS lists them as host failures. Pending: the Opus third round,
-landing, workflow disablement and the v0.7.0 tag.
+they are back to upstream's, and DECISIONS lists them as host failures. Opus's third round and Codex's
+fourth both passed on 1459bbdb4a, and the merge landed on main. The new upstream workflows that cannot
+run here (Issue Vouch, Mobile Dev Client, PR Limits) are disabled. Ged CI passed every job on main, and
+v0.7.0 shipped as the latest release with the arm64 dmg and zip. Follow-ups, not yet done: replace the
+`npx t3@latest` hints, publish CLI archives so SSH remote install and `gedcode update` work, the McpOAuth
+log text, Linux `StartupWMClass`, and the ADMX `T3Code` category ids.
