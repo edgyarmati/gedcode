@@ -6692,7 +6692,6 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
     it.effect("keeps generated worktree folders short without changing long branch names", () =>
       Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
         const pathService = yield* Path.Path;
         const cwd = yield* makeTmpDir();
         const { initialBranch } = yield* initRepoWithCommit(cwd);
@@ -6720,7 +6719,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           assert.equal(yield* git(created.worktree.path, ["branch", "--show-current"]), branch);
           assert.include(
             yield* git(cwd, ["-c", "core.quotePath=false", "worktree", "list", "--porcelain"]),
-            `worktree ${yield* fileSystem.realPath(created.worktree.path)}`,
+            `worktree ${created.worktree.path}`,
           );
           folders.add(folder);
         }

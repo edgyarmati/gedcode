@@ -628,5 +628,8 @@ guidance and both tests are back to upstream's. The second Opus round found upst
 still expected T3's CLI name, home folder, service plist and branch prefix, and terminals reporting
 `TERM_PROGRAM=t3code`; Ged CI never ran those suites. The tests are restated, terminals report
 `gedcode`, and Ged CI now runs upstream's own test suites (packages, server in eight shards, web in
-two). Pending: the next review round, landing, workflow
-disablement and the v0.7.0 tag.
+two). The first full Linux run then caught the palette search test still expecting the `t3/` branch
+prefix, and the package job stopping at the first failing package; both are fixed. Codex's third round
+found two upstream tests still canonicalizing macOS temp paths, the same drift as the provider tests;
+they are back to upstream's, and DECISIONS lists them as host failures. Pending: the Opus third round,
+landing, workflow disablement and the v0.7.0 tag.

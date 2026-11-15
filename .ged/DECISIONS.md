@@ -742,9 +742,7 @@ before any future push. This integration does not authorize pushing or publishin
 Released stock gates are exact-byte compatibility fingerprints, including the current v0.5.3 gate.
 Their historical text cannot be restyled without making existing projects look custom. Narrow lint
 exceptions preserve both the legacy and current literals. A frozen v0.5.3 fixture checks recognition
-and the explicit upgrade path independently of the generated current gate. macOS test fixtures
-canonicalize temporary paths when modeling Git or a CLI's real working directory; deliberate
-registry aliases remain lexical.
+and the explicit upgrade path independently of the generated current gate.
 
 ## 2026-11-14 — Integrate upstream through 756545a917
 
@@ -800,7 +798,8 @@ all of them at it.
 
 Ged CI runs upstream's suites on Linux, and that run is the authority. On a Mac, some upstream tests
 fail for reasons of the host rather than the code: the `/var` → `/private/var` temp-directory
-symlink (AgentSessionScanner, ManagedProjectFolders, pinnedRuntime), the case-insensitive filesystem
+symlink (AgentSessionScanner, ManagedProjectFolders, pinnedRuntime, CLI invocation ownership,
+GitVcsDriver worktree listing), the case-insensitive filesystem
 (ClaudeSkills `PSTACK`, DesktopLinuxUrlHandler icon spellings), bsdtar and the slower concurrent
 launch in `packages/ssh`, macOS `sh`, and editors installed on the machine (externalLauncher).
 Pointing `TMPDIR` at a case-sensitive APFS image with no symlink in its path clears the first two.
